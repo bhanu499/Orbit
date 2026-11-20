@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Orbit</string>
+    <string name="accessibility_service_description">Allows Orbit to read on-screen UI elements and perform taps, typing, and scrolling when you start an agent task.</string>
 </resources>
