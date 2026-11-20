@@ -1,4 +1,7 @@
-package com.orbit.assistant.agent.events
+package com.orbit.assistant.agent.runtime
+
+import com.orbit.assistant.agent.events.DemoScenario
+import com.orbit.assistant.agent.events.DemoScenarios
 
 import com.orbit.assistant.agent.automation.AgentAutomationService
 import com.orbit.assistant.agent.automation.AutomationAction
