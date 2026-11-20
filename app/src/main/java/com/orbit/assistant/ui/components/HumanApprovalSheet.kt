@@ -253,6 +253,27 @@ fun HumanApprovalCard(
                 ) {
                     Text("Reject")
                 }
+            } else {
+                Spacer(modifier = Modifier.height(14.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OrbitPrimaryButton(
+                        onClick = onApproveAndContinue,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Approve and continue")
+                    }
+                    OrbitSecondaryButton(
+                        onClick = onReject,
+                        modifier = Modifier.weight(1f),
+                        borderColor = colors.statusError.copy(alpha = 0.45f),
+                        contentColor = colors.statusError
+                    ) {
+                        Text("Reject")
+                    }
+                }
             }
         }
     }

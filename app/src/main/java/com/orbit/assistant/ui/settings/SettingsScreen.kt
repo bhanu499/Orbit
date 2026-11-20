@@ -23,11 +23,14 @@ import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -46,12 +49,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.orbit.assistant.BuildConfig
 import com.orbit.assistant.data.preferences.AutonomyLevel
 import com.orbit.assistant.data.preferences.ExecutionBehavior
+import com.orbit.assistant.data.preferences.LlmProvider
 import com.orbit.assistant.ui.components.OrbitCard
 import com.orbit.assistant.ui.theme.OrbitTheme
 
@@ -66,6 +72,16 @@ fun SettingsScreen(
 
     var showLicensesDialog by remember { mutableStateOf(false) }
     var showAppsDialog by remember { mutableStateOf(false) }
+    var showApiKey by remember { mutableStateOf(false) }
+    var apiKeyDraft by remember(state.settings.llmApiKey) {
+        mutableStateOf(state.settings.llmApiKey)
+    }
+    var modelDraft by remember(state.settings.llmModel) {
+        mutableStateOf(state.settings.llmModel)
+    }
+    var baseUrlDraft by remember(state.settings.llmBaseUrl) {
+        mutableStateOf(state.settings.llmBaseUrl)
+    }
     var brandsDraft by remember(state.settings.preferredBrands) {
         mutableStateOf(state.settings.preferredBrands)
     }
@@ -112,6 +128,94 @@ fun SettingsScreen(
                         checked = state.settings.isDarkMode,
                         onCheckedChange = viewModel::setDarkMode
                     )
+                }
+            }
+
+            // LLM & Live Accessibility Execution
+            item {
+                SectionLabel("LLM & live execution")
+                OrbitCard(containerColor = colors.surface, borderColor = colors.borderSubtle) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "Execution engine",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = colors.textPrimary
+                        )
+                        Text(
+                            text = "Uses Android Accessibility UI trees (no vision required) when an API key is configured and Orbit Accessibility Service is enabled.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textSecondary
+                        )
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            LlmProvider.entries.forEach { provider ->
+                                FilterChip(
+                                    selected = state.settings.llmProvider == provider,
+                                    onClick = { viewModel.setLlmProvider(provider) },
+                                    label = { Text(provider.label) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = colors.accentContainer,
+                                        selectedLabelColor = colors.accentPrimary
+                                    )
+                                )
+                            }
+                        }
+
+                        if (state.settings.llmProvider != LlmProvider.DEMO) {
+                            OutlinedTextField(
+                                value = apiKeyDraft,
+                                onValueChange = {
+                                    apiKeyDraft = it
+                                    viewModel.setLlmApiKey(it)
+                                },
+                                label = { Text("API key (stored locally)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton(onClick = { showApiKey = !showApiKey }) {
+                                        Icon(
+                                            imageVector = if (showApiKey) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                            contentDescription = if (showApiKey) "Hide API key" else "Show API key"
+                                        )
+                                    }
+                                }
+                            )
+
+                            OutlinedTextField(
+                                value = modelDraft,
+                                onValueChange = {
+                                    modelDraft = it
+                                    viewModel.setLlmModel(it)
+                                },
+                                label = { Text("Model ID") },
+                                placeholder = {
+                                    Text(
+                                        if (state.settings.llmProvider == LlmProvider.GEMINI) "gemini-2.5-flash"
+                                        else "gpt-4o-mini"
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+
+                            if (state.settings.llmProvider == LlmProvider.OPENAI_COMPATIBLE) {
+                                OutlinedTextField(
+                                    value = baseUrlDraft,
+                                    onValueChange = {
+                                        baseUrlDraft = it
+                                        viewModel.setLlmBaseUrl(it)
+                                    },
+                                    label = { Text("Base URL") },
+                                    placeholder = { Text("https://api.openai.com/v1") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -427,7 +531,12 @@ fun SettingsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text("Agent runtime", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
-                            Text("Demo Runtime v0.1 (Offline)", style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+                            Text(
+                                if (state.settings.llmProvider == LlmProvider.DEMO) "Demo Runtime"
+                                else "Live Accessibility (${state.settings.llmProvider.label})",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = colors.textPrimary
+                            )
                         }
                     }
                     HorizontalDivider(color = colors.borderSubtle)

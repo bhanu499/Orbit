@@ -11,8 +11,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.orbit.assistant.agent.appdiscovery.AppDescriptor
 import com.orbit.assistant.agent.appdiscovery.AppDiscoveryManager
+import com.orbit.assistant.agent.automation.OrbitAccessibilityService
 import com.orbit.assistant.data.preferences.AutonomyLevel
 import com.orbit.assistant.data.preferences.ExecutionBehavior
+import com.orbit.assistant.data.preferences.LlmProvider
 import com.orbit.assistant.data.preferences.OrbitSettings
 import com.orbit.assistant.domain.repository.AgentRepository
 import com.orbit.assistant.domain.repository.PreferencesRepository
@@ -81,9 +83,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun refreshPermissions() {
-        val accessibilityEnabled = runCatching {
-            Settings.Secure.getInt(context.contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0) == 1
-        }.getOrDefault(false)
+        val orbitAccessibilityActive = OrbitAccessibilityService.instance.value != null
 
         val notificationAccess = NotificationManagerCompat
             .getEnabledListenerPackages(context)
@@ -97,10 +97,10 @@ class SettingsViewModel @Inject constructor(
         _permissions.value = listOf(
             PermissionStatusItem(
                 id = "accessibility",
-                title = "Accessibility",
-                rationale = "Required in future releases to observe on-screen elements and perform assisted taps.",
-                isGranted = accessibilityEnabled,
-                statusLabel = if (accessibilityEnabled) "Service enabled on device" else "Not enabled"
+                title = "Accessibility (Orbit Service)",
+                rationale = "Required to read the live UI tree and perform taps, typing, and scrolling in real apps.",
+                isGranted = orbitAccessibilityActive,
+                statusLabel = if (orbitAccessibilityActive) "Connected" else "Not enabled"
             ),
             PermissionStatusItem(
                 id = "notification",
@@ -119,7 +119,7 @@ class SettingsViewModel @Inject constructor(
             PermissionStatusItem(
                 id = "screen_capture",
                 title = "Screen capture",
-                rationale = "Requested per-session via MediaProjection only when visual screen understanding is needed.",
+                rationale = "Optional MediaProjection fallback only when Accessibility tree lacks visual elements.",
                 isGranted = false,
                 statusLabel = "On-demand only"
             )
@@ -189,6 +189,27 @@ class SettingsViewModel @Inject constructor(
 
     fun setScreenshotRetention(enabled: Boolean) = viewModelScope.launch {
         preferencesRepository.updateScreenshotRetention(enabled)
+    }
+
+    fun setLlmProvider(provider: LlmProvider) = viewModelScope.launch {
+        preferencesRepository.updateLlmProvider(provider)
+        if (provider == LlmProvider.GEMINI && uiState.value.settings.llmModel.startsWith("gpt-")) {
+            preferencesRepository.updateLlmModel("gemini-2.5-flash")
+        } else if (provider == LlmProvider.OPENAI_COMPATIBLE && uiState.value.settings.llmModel.startsWith("gemini-")) {
+            preferencesRepository.updateLlmModel("gpt-4o-mini")
+        }
+    }
+
+    fun setLlmApiKey(apiKey: String) = viewModelScope.launch {
+        preferencesRepository.updateLlmApiKey(apiKey.trim())
+    }
+
+    fun setLlmModel(model: String) = viewModelScope.launch {
+        preferencesRepository.updateLlmModel(model.trim())
+    }
+
+    fun setLlmBaseUrl(baseUrl: String) = viewModelScope.launch {
+        preferencesRepository.updateLlmBaseUrl(baseUrl.trim())
     }
 
     fun clearTaskHistory() = viewModelScope.launch {

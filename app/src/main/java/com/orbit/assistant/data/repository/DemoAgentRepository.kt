@@ -2,14 +2,18 @@ package com.orbit.assistant.data.repository
 
 import com.orbit.assistant.agent.events.DemoScenarios
 import com.orbit.assistant.agent.runtime.DemoAgentRuntime
+import com.orbit.assistant.agent.runtime.LiveAgentRuntime
 import com.orbit.assistant.data.local.TaskDao
 import com.orbit.assistant.data.local.TaskEntity
+import com.orbit.assistant.data.preferences.LlmProvider
 import com.orbit.assistant.domain.models.AgentEvent
 import com.orbit.assistant.domain.models.ApprovalDecision
 import com.orbit.assistant.domain.models.Task
 import com.orbit.assistant.domain.repository.AgentRepository
+import com.orbit.assistant.domain.repository.PreferencesRepository
 import com.orbit.assistant.domain.state.AgentState
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 import java.util.UUID
@@ -20,6 +24,8 @@ import javax.inject.Singleton
 class DemoAgentRepository @Inject constructor(
     private val taskDao: TaskDao,
     private val demoRuntime: DemoAgentRuntime,
+    private val liveRuntime: LiveAgentRuntime,
+    private val preferencesRepository: PreferencesRepository,
     private val json: Json
 ) : AgentRepository {
 
@@ -34,8 +40,16 @@ class DemoAgentRepository @Inject constructor(
             status = AgentState.Planning
         )
         taskDao.upsertTask(TaskEntity.fromDomain(initialTask, json))
-        demoRuntime.startTask(initialTask) { updated ->
+
+        val settings = preferencesRepository.settingsFlow.first()
+        val persist: suspend (Task) -> Unit = { updated ->
             taskDao.upsertTask(TaskEntity.fromDomain(updated, json))
+        }
+
+        if (settings.llmProvider != LlmProvider.DEMO && settings.llmApiKey.isNotBlank()) {
+            liveRuntime.startTask(initialTask, settings, persist)
+        } else {
+            demoRuntime.startTask(initialTask, persist)
         }
         return initialTask
     }
@@ -55,33 +69,43 @@ class DemoAgentRepository @Inject constructor(
     }
 
     override suspend fun cancelTask(taskId: String) {
-        demoRuntime.cancel(taskId) { updated ->
+        val persist: suspend (Task) -> Unit = { updated ->
             taskDao.upsertTask(TaskEntity.fromDomain(updated, json))
         }
+        if (liveRuntime.isManaging(taskId)) liveRuntime.cancel(taskId, persist)
+        else demoRuntime.cancel(taskId, persist)
     }
 
     override suspend fun pauseTask(taskId: String) {
-        demoRuntime.pause(taskId) { updated ->
+        val persist: suspend (Task) -> Unit = { updated ->
             taskDao.upsertTask(TaskEntity.fromDomain(updated, json))
         }
+        if (liveRuntime.isManaging(taskId)) liveRuntime.pause(taskId, persist)
+        else demoRuntime.pause(taskId, persist)
     }
 
     override suspend fun resumeTask(taskId: String) {
-        demoRuntime.resume(taskId) { updated ->
+        val persist: suspend (Task) -> Unit = { updated ->
             taskDao.upsertTask(TaskEntity.fromDomain(updated, json))
         }
+        if (liveRuntime.isManaging(taskId)) liveRuntime.resume(taskId, persist)
+        else demoRuntime.resume(taskId, persist)
     }
 
     override suspend fun continueAfterIntervention(taskId: String) {
-        demoRuntime.continueAfterIntervention(taskId) { updated ->
+        val persist: suspend (Task) -> Unit = { updated ->
             taskDao.upsertTask(TaskEntity.fromDomain(updated, json))
         }
+        if (liveRuntime.isManaging(taskId)) liveRuntime.continueAfterIntervention(taskId, persist)
+        else demoRuntime.continueAfterIntervention(taskId, persist)
     }
 
     override suspend fun approveTask(taskId: String, approval: ApprovalDecision) {
-        demoRuntime.submitApproval(taskId, approval) { updated ->
+        val persist: suspend (Task) -> Unit = { updated ->
             taskDao.upsertTask(TaskEntity.fromDomain(updated, json))
         }
+        if (liveRuntime.isManaging(taskId)) liveRuntime.submitApproval(taskId, approval, persist)
+        else demoRuntime.submitApproval(taskId, approval, persist)
     }
 
     override suspend fun updateBasketItemQuantity(taskId: String, itemId: String, delta: Int) {

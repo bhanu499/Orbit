@@ -33,6 +33,10 @@ class OrbitPreferencesDataStore @Inject constructor(
         val PREFERRED_LANGUAGE = stringPreferencesKey("preferred_language")
         val EXECUTION_BEHAVIOR = stringPreferencesKey("execution_behavior")
         val SCREENSHOT_RETENTION = booleanPreferencesKey("screenshot_retention")
+        val LLM_PROVIDER = stringPreferencesKey("llm_provider")
+        val LLM_API_KEY = stringPreferencesKey("llm_api_key")
+        val LLM_MODEL = stringPreferencesKey("llm_model")
+        val LLM_BASE_URL = stringPreferencesKey("llm_base_url")
     }
 
     val settingsFlow: Flow<OrbitSettings> = context.orbitDataStore.data.map { prefs ->
@@ -55,7 +59,13 @@ class OrbitPreferencesDataStore @Inject constructor(
             defaultExecutionBehavior = prefs[Keys.EXECUTION_BEHAVIOR]?.let {
                 runCatching { ExecutionBehavior.valueOf(it) }.getOrNull()
             } ?: ExecutionBehavior.STEP_BY_STEP,
-            retainScreenshotsLocally = prefs[Keys.SCREENSHOT_RETENTION] ?: false
+            retainScreenshotsLocally = prefs[Keys.SCREENSHOT_RETENTION] ?: false,
+            llmProvider = prefs[Keys.LLM_PROVIDER]?.let {
+                runCatching { LlmProvider.valueOf(it) }.getOrNull()
+            } ?: LlmProvider.DEMO,
+            llmApiKey = prefs[Keys.LLM_API_KEY] ?: "",
+            llmModel = prefs[Keys.LLM_MODEL] ?: "gemini-2.5-flash",
+            llmBaseUrl = prefs[Keys.LLM_BASE_URL] ?: "https://api.openai.com/v1"
         )
     }
 
@@ -105,6 +115,22 @@ class OrbitPreferencesDataStore @Inject constructor(
 
     suspend fun setScreenshotRetention(enabled: Boolean) {
         context.orbitDataStore.edit { it[Keys.SCREENSHOT_RETENTION] = enabled }
+    }
+
+    suspend fun setLlmProvider(provider: LlmProvider) {
+        context.orbitDataStore.edit { it[Keys.LLM_PROVIDER] = provider.name }
+    }
+
+    suspend fun setLlmApiKey(apiKey: String) {
+        context.orbitDataStore.edit { it[Keys.LLM_API_KEY] = apiKey }
+    }
+
+    suspend fun setLlmModel(model: String) {
+        context.orbitDataStore.edit { it[Keys.LLM_MODEL] = model }
+    }
+
+    suspend fun setLlmBaseUrl(baseUrl: String) {
+        context.orbitDataStore.edit { it[Keys.LLM_BASE_URL] = baseUrl }
     }
 
     suspend fun clearPersonalizationMemory() {

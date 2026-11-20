@@ -11,6 +11,12 @@ enum class ExecutionBehavior(val label: String) {
     COMPACT("Compact progress updates")
 }
 
+enum class LlmProvider(val label: String) {
+    DEMO("Demo Mode (Simulated)"),
+    GEMINI("Google Gemini"),
+    OPENAI_COMPATIBLE("OpenAI / Compatible")
+}
+
 data class OrbitSettings(
     val isDarkMode: Boolean = true,
     val autonomyLevel: AutonomyLevel = AutonomyLevel.BALANCED,
@@ -23,5 +29,9 @@ data class OrbitSettings(
     val preferredCategories: String = "Dairy, Fresh Bakery, Coffee, Pantry",
     val preferredLanguage: String = "English",
     val defaultExecutionBehavior: ExecutionBehavior = ExecutionBehavior.STEP_BY_STEP,
-    val retainScreenshotsLocally: Boolean = false
+    val retainScreenshotsLocally: Boolean = false,
+    val llmProvider: LlmProvider = LlmProvider.DEMO,
+    val llmApiKey: String = "",
+    val llmModel: String = "gemini-2.5-flash",
+    val llmBaseUrl: String = "https://api.openai.com/v1"
 )

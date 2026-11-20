@@ -2,6 +2,7 @@ package com.orbit.assistant.data.repository
 
 import com.orbit.assistant.data.preferences.AutonomyLevel
 import com.orbit.assistant.data.preferences.ExecutionBehavior
+import com.orbit.assistant.data.preferences.LlmProvider
 import com.orbit.assistant.data.preferences.OrbitPreferencesDataStore
 import com.orbit.assistant.data.preferences.OrbitSettings
 import com.orbit.assistant.domain.repository.PreferencesRepository
@@ -29,5 +30,9 @@ class PreferencesRepositoryImpl @Inject constructor(
     override suspend fun updateDefaultExecutionBehavior(behavior: ExecutionBehavior) =
         dataStore.setExecutionBehavior(behavior)
     override suspend fun updateScreenshotRetention(enabled: Boolean) = dataStore.setScreenshotRetention(enabled)
+    override suspend fun updateLlmProvider(provider: LlmProvider) = dataStore.setLlmProvider(provider)
+    override suspend fun updateLlmApiKey(apiKey: String) = dataStore.setLlmApiKey(apiKey)
+    override suspend fun updateLlmModel(model: String) = dataStore.setLlmModel(model)
+    override suspend fun updateLlmBaseUrl(baseUrl: String) = dataStore.setLlmBaseUrl(baseUrl)
     override suspend fun clearAgentMemory() = dataStore.clearPersonalizationMemory()
 }
