@@ -2,6 +2,7 @@ package com.orbit.assistant.agent.automation
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.Intent
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Bundle
@@ -40,6 +41,7 @@ class OrbitAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         _instance.value = this
+        OrbitKeepAliveService.start(applicationContext)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -50,16 +52,28 @@ class OrbitAccessibilityService : AccessibilityService() {
         // No-op
     }
 
+    override fun onUnbind(intent: Intent?): Boolean {
+        if (_instance.value === this) {
+            _instance.value = null
+        }
+        clearCachedNodes()
+        OrbitKeepAliveService.stop(applicationContext)
+        return super.onUnbind(intent)
+    }
+
     override fun onDestroy() {
         if (_instance.value === this) {
             _instance.value = null
         }
         clearCachedNodes()
+        OrbitKeepAliveService.stop(applicationContext)
         super.onDestroy()
     }
 
     fun captureUiTree(maxNodes: Int = 75): Pair<String, List<UiNodeSnapshot>> {
-        val root = rootInActiveWindow ?: return "" to emptyList()
+        val root = rootInActiveWindow
+            ?: windows?.firstOrNull { it.isActive }?.root
+            ?: return "" to emptyList()
         val pkg = root.packageName?.toString().orEmpty()
         clearCachedNodes()
 

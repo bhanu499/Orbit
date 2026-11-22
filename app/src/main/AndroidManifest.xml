@@ -3,6 +3,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Scoped package visibility for Android 11+ (API 30+) without QUERY_ALL_PACKAGES -->
     <queries>
@@ -50,6 +53,15 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/orbit_accessibility_config" />
+        </service>
+
+        <service
+            android:name=".agent.automation.OrbitKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps Orbit Accessibility automation active across app switches" />
         </service>
     </application>
 
