@@ -440,13 +440,15 @@ class LiveAgentRuntime @Inject constructor(
                 serializer = AgentActionPlan.serializer()
             )
 
-            val structured = res.getOrElse { err ->
+            if (res.isFailure) {
+                val err = res.exceptionOrNull()!!
                 if (attempt == maxValidationAttempts || err is TransientProviderException) {
                     return Result.failure(err)
                 }
                 userPrompt = "$contextPrompt\n\nSCREEN:\n$screenPrompt\n\nPREVIOUS_ERROR: JSON parse failed (${err.localizedMessage}). Return valid JSON only."
                 continue
             }
+            val structured = res.getOrThrow()
 
             tokenUsageRepository.record(
                 taskId = taskId,
