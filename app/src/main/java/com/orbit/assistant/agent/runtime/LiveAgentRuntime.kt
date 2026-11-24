@@ -1,11 +1,29 @@
 package com.orbit.assistant.agent.runtime
 
+import com.orbit.assistant.BuildConfig
+import com.orbit.assistant.agent.actions.ActionValidationResult
+import com.orbit.assistant.agent.actions.AgentActionPlan
+import com.orbit.assistant.agent.actions.AgentActionType
+import com.orbit.assistant.agent.actions.AgentActionValidator
 import com.orbit.assistant.agent.appdiscovery.AppDiscoveryManager
 import com.orbit.assistant.agent.automation.AccessibilityAutomationAdapter
 import com.orbit.assistant.agent.automation.AutomationAction
 import com.orbit.assistant.agent.automation.ScrollDirection
+import com.orbit.assistant.agent.context.AgentContextManager
+import com.orbit.assistant.agent.llm.GeminiProvider
+import com.orbit.assistant.agent.llm.GroqProvider
+import com.orbit.assistant.agent.llm.LLMProviderConfig
+import com.orbit.assistant.agent.llm.LLMRequest
+import com.orbit.assistant.agent.llm.ModelRouter
+import com.orbit.assistant.agent.llm.OpenAIProvider
+import com.orbit.assistant.agent.llm.ProviderId
+import com.orbit.assistant.agent.llm.RoutingPolicyConfig
+import com.orbit.assistant.agent.llm.RoutingSignals
+import com.orbit.assistant.agent.llm.TransientProviderException
+import com.orbit.assistant.agent.observation.NormalizedScreenObservation
+import com.orbit.assistant.agent.observation.ScreenObservationNormalizer
 import com.orbit.assistant.data.preferences.OrbitSettings
-import com.orbit.assistant.data.remote.LlmAgentClient
+import com.orbit.assistant.data.repository.TokenUsageRepository
 import com.orbit.assistant.domain.models.AgentEvent
 import com.orbit.assistant.domain.models.ApprovalDecision
 import com.orbit.assistant.domain.models.ApprovalDecisionType
@@ -31,7 +49,13 @@ import javax.inject.Singleton
 @Singleton
 class LiveAgentRuntime @Inject constructor(
     private val accessibilityAdapter: AccessibilityAutomationAdapter,
-    private val llmClient: LlmAgentClient,
+    private val modelRouter: ModelRouter,
+    private val geminiProvider: GeminiProvider,
+    private val openAIProvider: OpenAIProvider,
+    private val groqProvider: GroqProvider,
+    private val normalizer: ScreenObservationNormalizer,
+    private val contextManager: AgentContextManager,
+    private val tokenUsageRepository: TokenUsageRepository,
     private val appDiscoveryManager: AppDiscoveryManager
 ) {
     private val runtimeScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -43,11 +67,29 @@ class LiveAgentRuntime @Inject constructor(
 
     fun isManaging(taskId: String): Boolean = taskStates.containsKey(taskId)
 
+    fun configureProviders(settings: OrbitSettings) {
+        val proxy = settings.proxyBaseUrl.ifBlank { BuildConfig.ORBIT_PROXY_BASE_URL }
+        geminiProvider.config = LLMProviderConfig(
+            apiKey = if (BuildConfig.DEBUG) settings.geminiDevApiKey.ifBlank { BuildConfig.DEV_GEMINI_API_KEY } else "",
+            proxyBaseUrl = proxy
+        )
+        openAIProvider.config = LLMProviderConfig(
+            apiKey = if (BuildConfig.DEBUG) settings.openAiDevApiKey.ifBlank { BuildConfig.DEV_OPENAI_API_KEY } else "",
+            proxyBaseUrl = proxy
+        )
+        groqProvider.config = LLMProviderConfig(
+            apiKey = if (BuildConfig.DEBUG) settings.groqDevApiKey.ifBlank { BuildConfig.DEV_GROQ_API_KEY } else "",
+            proxyBaseUrl = proxy
+        )
+    }
+
     fun startTask(
         initialTask: Task,
         settings: OrbitSettings,
         onPersist: suspend (Task) -> Unit
     ) {
+        configureProviders(settings)
+
         val flow = MutableStateFlow(initialTask.copy(status = AgentState.Planning))
         taskStates[initialTask.taskId] = flow
         pauseFlags[initialTask.taskId] = MutableStateFlow(false)
@@ -91,32 +133,63 @@ class LiveAgentRuntime @Inject constructor(
                 )
             }
 
+            contextManager.initialize(
+                goal = initialTask.userPrompt,
+                preferences = mapOf(
+                    "apps" to settings.preferredShoppingApps.joinToString(","),
+                    "lang" to settings.preferredLanguage
+                )
+            )
+
             val installedApps = appDiscoveryManager.discoverLaunchableApps()
-            val appsText = installedApps.take(40).joinToString("\n") {
-                "- ${it.appName} (${it.packageName})"
+            val appsCompact = installedApps.take(25).joinToString(", ") {
+                "${it.appName}=${it.packageName}"
             }
-            val historyLines = mutableListOf<String>()
+
+            val routingPolicy = RoutingPolicyConfig(
+                primaryModel = settings.primaryModelOverride.ifBlank { RoutingPolicyConfig.DEFAULT_PRIMARY_MODEL },
+                recoveryModel = settings.recoveryModelOverride.ifBlank { RoutingPolicyConfig.DEFAULT_RECOVERY_MODEL },
+                classifierModel = settings.classifierModelOverride.ifBlank { RoutingPolicyConfig.DEFAULT_CLASSIFIER_MODEL }
+            )
+
+            var lastConfidence = 1.0f
+            var lastErrorTransient = false
             val maxSteps = 18
 
             for (stepIndex in 1..maxSteps) {
                 waitIfPausedOrBlocked(initialTask.taskId)
 
-                val observation = accessibilityAdapter.observeScreen("unknown", "Foreground screen")
-                val uiNodesText = if (observation.detectedElements.isEmpty()) {
-                    "(no visible UI nodes captured)"
-                } else {
-                    observation.detectedElements.joinToString("\n")
-                }
+                val rawTree = accessibilityAdapter.observeRawTree()
+                val prevObs = contextManager.previousObservation()
+                val normalized = normalizer.normalize(rawTree, settings.maxObservationTokens)
+                val diff = normalizer.compare(prevObs, normalized)
+                val ctx = contextManager.updateObservation(normalized, diff)
+                val screenPrompt = normalizer.toCompactPrompt(normalized, diff)
 
-                val thinkingId = "evt_${initialTask.taskId}_$stepIndex"
+                val route = modelRouter.selectRoute(
+                    signals = RoutingSignals(
+                        isLightweightClassification = false,
+                        consecutiveFailures = ctx.recoveryAttempts,
+                        repeatedScreenCount = ctx.repeatedScreenCount,
+                        lastConfidence = lastConfidence,
+                        lastErrorWasTransient = lastErrorTransient
+                    ),
+                    policy = routingPolicy
+                )
+
                 val thinkingEvent = AgentEvent(
-                    eventId = thinkingId,
+                    eventId = "evt_${initialTask.taskId}_$stepIndex",
                     taskId = initialTask.taskId,
                     timestamp = System.currentTimeMillis(),
                     eventType = EventType.Thinking,
-                    title = "Step $stepIndex: Planning next action",
-                    description = "Observing ${observation.packageName} (${observation.detectedElements.size} UI nodes)",
-                    status = EventStatus.IN_PROGRESS
+                    title = "Step $stepIndex (${route.model})",
+                    description = "Normalized ${normalized.elements.size}/${normalized.totalRawNodes} nodes (~${normalized.estimatedTokens} tok, ${diff.screenState.name})",
+                    status = EventStatus.IN_PROGRESS,
+                    metadata = mapOf(
+                        "provider" to route.providerId.name,
+                        "model" to route.model,
+                        "tier" to route.tier.name
+                    )
                 )
                 events.add(thinkingEvent)
                 updateTask(initialTask.taskId, onPersist) {
@@ -127,22 +200,21 @@ class LiveAgentRuntime @Inject constructor(
                     )
                 }
 
-                val planResult = llmClient.planNextStep(
-                    provider = settings.llmProvider,
-                    apiKey = settings.llmApiKey,
-                    model = settings.llmModel,
-                    baseUrl = settings.llmBaseUrl,
-                    userGoal = initialTask.userPrompt,
-                    currentPackage = observation.packageName,
-                    uiNodesText = uiNodesText,
-                    installedAppsText = appsText,
-                    historyText = historyLines.takeLast(8).joinToString("\n").ifBlank { "None yet" }
+                val planResult = requestValidatedPlan(
+                    taskId = initialTask.taskId,
+                    providerId = route.providerId,
+                    model = route.model,
+                    reason = route.reason,
+                    contextPrompt = contextManager.toCompactContextPrompt(appsCompact),
+                    screenPrompt = screenPrompt,
+                    observation = normalized
                 )
 
-                val step = planResult.getOrElse { err ->
+                val plan = planResult.getOrElse { err ->
+                    lastErrorTransient = err is TransientProviderException
                     events[events.lastIndex] = thinkingEvent.copy(
-                        eventType = EventType.Error("LLM_ERROR", true),
-                        title = "LLM request failed",
+                        eventType = EventType.Error("LLM_ERROR", lastErrorTransient),
+                        title = "LLM step failed (${route.model})",
                         description = err.localizedMessage ?: "Unknown error",
                         status = EventStatus.FAILED
                     )
@@ -159,142 +231,151 @@ class LiveAgentRuntime @Inject constructor(
                     return@launch
                 }
 
-                historyLines.add("$stepIndex. ${step.action}(node=${step.nodeIndex}, text=${step.text}, pkg=${step.packageName}) -> ${step.thought}")
+                lastConfidence = plan.confidence
+                lastErrorTransient = false
 
-                when (step.action.lowercase()) {
-                    "launch_app" -> {
-                        val pkg = step.packageName.orEmpty()
+                when (plan.action) {
+                    AgentActionType.LAUNCH_APP -> {
+                        val pkg = plan.packageName.orEmpty()
                         val appName = installedApps.firstOrNull { it.packageName == pkg }?.appName ?: pkg
                         val res = accessibilityAdapter.executeAction(AutomationAction.LaunchApp(pkg, appName))
+                        contextManager.recordActionOutcome("LAUNCH_APP($pkg)", res.success)
                         events[events.lastIndex] = thinkingEvent.copy(
                             eventType = EventType.AppLaunched(pkg, appName),
                             title = "Opening $appName",
-                            description = "${step.thought}\n${res.message}",
+                            description = "${plan.thought}\n${res.message}",
                             status = if (res.success) EventStatus.COMPLETED else EventStatus.FAILED
                         )
-                        delay(1600L)
+                        delay(1500L)
                     }
-                    "tap" -> {
+                    AgentActionType.TAP -> {
                         val res = accessibilityAdapter.executeAction(
-                            AutomationAction.Tap(0, 0, step.nodeIndex?.toString())
+                            AutomationAction.Tap(0, 0, plan.nodeId?.toString())
                         )
+                        contextManager.recordActionOutcome("TAP(#${plan.nodeId})", res.success)
                         events[events.lastIndex] = thinkingEvent.copy(
-                            eventType = EventType.ScreenObserved(observation.packageName),
-                            title = "Tap node #${step.nodeIndex ?: "?"}",
-                            description = "${step.thought}\n${res.message}",
+                            eventType = EventType.ScreenObserved(normalized.packageName),
+                            title = "Tap node #${plan.nodeId}",
+                            description = "${plan.thought}\n${res.message}",
                             status = if (res.success) EventStatus.COMPLETED else EventStatus.FAILED
                         )
-                        delay(950L)
+                        delay(900L)
                     }
-                    "type" -> {
-                        val text = step.text.orEmpty()
+                    AgentActionType.TYPE_TEXT -> {
+                        val text = plan.text.orEmpty()
                         val res = accessibilityAdapter.executeAction(
-                            AutomationAction.TypeText(text, step.nodeIndex?.toString())
+                            AutomationAction.TypeText(text, plan.nodeId?.toString())
                         )
+                        contextManager.recordActionOutcome("TYPE_TEXT('$text')", res.success)
                         events[events.lastIndex] = thinkingEvent.copy(
-                            eventType = EventType.SearchPerformed(text, observation.packageName),
+                            eventType = EventType.SearchPerformed(text, normalized.packageName),
                             title = "Typed '$text'",
-                            description = "${step.thought}\n${res.message}",
+                            description = "${plan.thought}\n${res.message}",
                             status = if (res.success) EventStatus.COMPLETED else EventStatus.FAILED
                         )
-                        delay(1100L)
+                        delay(1000L)
                     }
-                    "scroll" -> {
-                        val dir = when (step.direction?.lowercase()) {
+                    AgentActionType.SCROLL -> {
+                        val dir = when (plan.direction?.lowercase()) {
                             "up" -> ScrollDirection.UP
                             "left" -> ScrollDirection.LEFT
                             "right" -> ScrollDirection.RIGHT
                             else -> ScrollDirection.DOWN
                         }
                         val res = accessibilityAdapter.executeAction(AutomationAction.Scroll(dir))
+                        contextManager.recordActionOutcome("SCROLL(${dir.name})", res.success)
                         events[events.lastIndex] = thinkingEvent.copy(
-                            eventType = EventType.ScreenObserved(observation.packageName),
+                            eventType = EventType.ScreenObserved(normalized.packageName),
                             title = "Scrolled ${dir.name.lowercase()}",
-                            description = "${step.thought}\n${res.message}",
+                            description = "${plan.thought}\n${res.message}",
                             status = if (res.success) EventStatus.COMPLETED else EventStatus.FAILED
                         )
-                        delay(900L)
+                        delay(850L)
                     }
-                    "back" -> {
-                        accessibilityAdapter.executeAction(AutomationAction.Back)
+                    AgentActionType.BACK -> {
+                        val res = accessibilityAdapter.executeAction(AutomationAction.Back)
+                        contextManager.recordActionOutcome("BACK", res.success)
                         events[events.lastIndex] = thinkingEvent.copy(
-                            eventType = EventType.ScreenObserved(observation.packageName),
+                            eventType = EventType.ScreenObserved(normalized.packageName),
                             title = "Navigated back",
-                            description = step.thought,
+                            description = plan.thought,
                             status = EventStatus.COMPLETED
                         )
-                        delay(800L)
+                        delay(750L)
                     }
-                    "wait" -> {
-                        accessibilityAdapter.executeAction(AutomationAction.Wait(1500L))
+                    AgentActionType.WAIT -> {
+                        accessibilityAdapter.executeAction(AutomationAction.Wait(1400L))
+                        contextManager.recordActionOutcome("WAIT", true)
                         events[events.lastIndex] = thinkingEvent.copy(
                             eventType = EventType.Thinking,
                             title = "Waiting for screen",
-                            description = step.thought,
+                            description = plan.thought,
                             status = EventStatus.COMPLETED
                         )
                     }
-                    "needs_user_intervention" -> {
-                        val reason = step.summary ?: step.thought
-                        events[events.lastIndex] = thinkingEvent.copy(
-                            eventType = EventType.UserInterventionRequired(reason, "Complete this step on screen, then tap Continue."),
-                            title = "Needs your attention",
-                            description = reason,
-                            status = EventStatus.NEEDS_ATTENTION
-                        )
-                        interventionFlags[initialTask.taskId]?.value = true
-                        updateTask(initialTask.taskId, onPersist) {
-                            it.copy(
-                                status = AgentState.NeedsUserIntervention,
-                                events = events.toList(),
-                                updatedAt = System.currentTimeMillis()
+                    AgentActionType.ASK_USER -> {
+                        val promptText = plan.summary ?: plan.thought
+                        val isApproval = promptText.contains("checkout", ignoreCase = true) ||
+                            promptText.contains("purchase", ignoreCase = true) ||
+                            promptText.contains("approve", ignoreCase = true)
+
+                        if (isApproval) {
+                            events[events.lastIndex] = thinkingEvent.copy(
+                                eventType = EventType.Verification("Human Approval"),
+                                title = "Awaiting your approval",
+                                description = promptText,
+                                status = EventStatus.NEEDS_ATTENTION
                             )
+                            val appr = ApprovalRequest(
+                                approvalId = "appr_${UUID.randomUUID().toString().take(8)}",
+                                title = "Approve next step",
+                                subtitle = promptText,
+                                shoppingData = null
+                            )
+                            approvalFlags[initialTask.taskId]?.value = true
+                            updateTask(initialTask.taskId, onPersist) {
+                                it.copy(
+                                    status = AgentState.WaitingForApproval,
+                                    approvalRequired = appr,
+                                    events = events.toList(),
+                                    updatedAt = System.currentTimeMillis()
+                                )
+                            }
+                        } else {
+                            events[events.lastIndex] = thinkingEvent.copy(
+                                eventType = EventType.UserInterventionRequired(
+                                    reason = promptText,
+                                    suggestedAction = "Complete this step on screen, then tap Continue."
+                                ),
+                                title = "Needs your attention",
+                                description = promptText,
+                                status = EventStatus.NEEDS_ATTENTION
+                            )
+                            interventionFlags[initialTask.taskId]?.value = true
+                            updateTask(initialTask.taskId, onPersist) {
+                                it.copy(
+                                    status = AgentState.NeedsUserIntervention,
+                                    events = events.toList(),
+                                    updatedAt = System.currentTimeMillis()
+                                )
+                            }
                         }
                         waitIfPausedOrBlocked(initialTask.taskId)
+                        contextManager.recordActionOutcome("USER_CONFIRMED", true)
                         events[events.lastIndex] = events.last().copy(status = EventStatus.COMPLETED)
-                        updateTask(initialTask.taskId, onPersist) {
-                            it.copy(status = AgentState.Running, events = events.toList())
-                        }
                     }
-                    "request_approval" -> {
-                        val summary = step.summary ?: step.thought
-                        events[events.lastIndex] = thinkingEvent.copy(
-                            eventType = EventType.Verification("Human Approval"),
-                            title = "Awaiting your approval",
-                            description = summary,
-                            status = EventStatus.NEEDS_ATTENTION
-                        )
-                        val appr = ApprovalRequest(
-                            approvalId = "appr_${UUID.randomUUID().toString().take(8)}",
-                            title = "Approve next step",
-                            subtitle = summary,
-                            shoppingData = null
-                        )
-                        approvalFlags[initialTask.taskId]?.value = true
-                        updateTask(initialTask.taskId, onPersist) {
-                            it.copy(
-                                status = AgentState.WaitingForApproval,
-                                approvalRequired = appr,
-                                events = events.toList(),
-                                updatedAt = System.currentTimeMillis()
-                            )
-                        }
-                        waitIfPausedOrBlocked(initialTask.taskId)
-                    }
-                    else -> {
+                    AgentActionType.COMPLETE -> {
                         events[events.lastIndex] = thinkingEvent.copy(
                             eventType = EventType.Verification("Task Complete"),
                             title = "Completed",
-                            description = step.summary ?: step.thought,
+                            description = plan.summary ?: plan.thought,
                             status = EventStatus.COMPLETED
                         )
                         updateTask(initialTask.taskId, onPersist) {
                             it.copy(
                                 status = AgentState.Completed,
                                 events = events.toList(),
-                                result = TaskResult(
-                                    summaryMarkdown = step.summary ?: step.thought
-                                ),
+                                result = TaskResult(summaryMarkdown = plan.summary ?: plan.thought),
                                 updatedAt = System.currentTimeMillis(),
                                 durationMs = System.currentTimeMillis() - startTime
                             )
@@ -325,6 +406,67 @@ class LiveAgentRuntime @Inject constructor(
         }
 
         activeJobs[initialTask.taskId] = job
+    }
+
+    private suspend fun requestValidatedPlan(
+        taskId: String,
+        providerId: ProviderId,
+        model: String,
+        reason: String,
+        contextPrompt: String,
+        screenPrompt: String,
+        observation: NormalizedScreenObservation
+    ): Result<AgentActionPlan> {
+        val provider = modelRouter.providerFor(providerId)
+        val systemPrompt = """
+            You are Orbit, an Android AI agent. Return ONLY valid JSON matching:
+            {"thought":"...","confidence":0.0-1.0,"action":"TAP|TYPE_TEXT|SCROLL|BACK|LAUNCH_APP|WAIT|ASK_USER|COMPLETE","nodeId":int|null,"text":string|null,"direction":"up|down|left|right"|null,"packageName":string|null,"summary":string|null}
+            Rules: Never complete payment. Use ASK_USER before checkout/purchase/login/OTP. Use nodeId from UI elements.
+        """.trimIndent()
+
+        var userPrompt = "$contextPrompt\n\nSCREEN:\n$screenPrompt"
+        val maxValidationAttempts = 2
+
+        for (attempt in 0..maxValidationAttempts) {
+            val res = provider.generateStructured(
+                request = LLMRequest(
+                    model = model,
+                    systemPrompt = systemPrompt,
+                    userPrompt = userPrompt,
+                    taskId = taskId,
+                    reason = if (attempt == 0) reason else "validation_repair_$attempt",
+                    expectJson = true
+                ),
+                serializer = AgentActionPlan.serializer()
+            )
+
+            val structured = res.getOrElse { err ->
+                if (attempt == maxValidationAttempts || err is TransientProviderException) {
+                    return Result.failure(err)
+                }
+                userPrompt = "$contextPrompt\n\nSCREEN:\n$screenPrompt\n\nPREVIOUS_ERROR: JSON parse failed (${err.localizedMessage}). Return valid JSON only."
+                continue
+            }
+
+            tokenUsageRepository.record(
+                taskId = taskId,
+                provider = structured.provider,
+                model = structured.model,
+                usage = structured.usage,
+                reason = if (attempt == 0) reason else "validation_repair_$attempt"
+            )
+
+            when (val validation = AgentActionValidator.validate(structured.data, observation)) {
+                is ActionValidationResult.Valid -> return Result.success(validation.plan)
+                is ActionValidationResult.Invalid -> {
+                    if (attempt == maxValidationAttempts) {
+                        return Result.failure(IllegalArgumentException("Action validation failed: ${validation.reason}"))
+                    }
+                    userPrompt = "$contextPrompt\n\nSCREEN:\n$screenPrompt\n\nVALIDATION_ERROR: ${validation.reason}. Fix and return valid JSON."
+                }
+            }
+        }
+        return Result.failure(IllegalStateException("Exhausted bounded validation retries"))
     }
 
     suspend fun pause(taskId: String, onPersist: suspend (Task) -> Unit) {

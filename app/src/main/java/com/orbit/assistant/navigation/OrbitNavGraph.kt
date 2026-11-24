@@ -28,6 +28,7 @@ import com.orbit.assistant.ui.activity.TaskDetailScreen
 import com.orbit.assistant.ui.agent.AgentScreen
 import com.orbit.assistant.ui.settings.SettingsScreen
 import com.orbit.assistant.ui.theme.OrbitTheme
+import com.orbit.assistant.ui.usage.UsageScreen
 
 sealed class OrbitDestination(
     val route: String,
@@ -118,7 +119,14 @@ fun OrbitAppScaffold() {
                 )
             }
             composable(OrbitDestination.Settings.route) {
-                SettingsScreen()
+                SettingsScreen(
+                    onOpenUsage = { navController.navigate("usage") }
+                )
+            }
+            composable("usage") {
+                UsageScreen(
+                    onBack = { navController.popBackStack() }
+                )
             }
             composable(
                 route = "task_detail/{taskId}",

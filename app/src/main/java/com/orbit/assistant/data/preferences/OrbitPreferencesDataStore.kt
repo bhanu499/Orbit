@@ -5,9 +5,12 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.orbit.assistant.agent.llm.RoutingPolicyConfig
+import com.orbit.assistant.agent.observation.ScreenObservationNormalizer
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -33,10 +36,15 @@ class OrbitPreferencesDataStore @Inject constructor(
         val PREFERRED_LANGUAGE = stringPreferencesKey("preferred_language")
         val EXECUTION_BEHAVIOR = stringPreferencesKey("execution_behavior")
         val SCREENSHOT_RETENTION = booleanPreferencesKey("screenshot_retention")
-        val LLM_PROVIDER = stringPreferencesKey("llm_provider")
-        val LLM_API_KEY = stringPreferencesKey("llm_api_key")
-        val LLM_MODEL = stringPreferencesKey("llm_model")
-        val LLM_BASE_URL = stringPreferencesKey("llm_base_url")
+        val EXECUTION_MODE = stringPreferencesKey("execution_mode")
+        val PROXY_BASE_URL = stringPreferencesKey("proxy_base_url")
+        val GEMINI_DEV_KEY = stringPreferencesKey("gemini_dev_key")
+        val OPENAI_DEV_KEY = stringPreferencesKey("openai_dev_key")
+        val GROQ_DEV_KEY = stringPreferencesKey("groq_dev_key")
+        val PRIMARY_MODEL_OVERRIDE = stringPreferencesKey("primary_model_override")
+        val RECOVERY_MODEL_OVERRIDE = stringPreferencesKey("recovery_model_override")
+        val CLASSIFIER_MODEL_OVERRIDE = stringPreferencesKey("classifier_model_override")
+        val MAX_OBSERVATION_TOKENS = intPreferencesKey("max_observation_tokens")
     }
 
     val settingsFlow: Flow<OrbitSettings> = context.orbitDataStore.data.map { prefs ->
@@ -60,12 +68,21 @@ class OrbitPreferencesDataStore @Inject constructor(
                 runCatching { ExecutionBehavior.valueOf(it) }.getOrNull()
             } ?: ExecutionBehavior.STEP_BY_STEP,
             retainScreenshotsLocally = prefs[Keys.SCREENSHOT_RETENTION] ?: false,
-            llmProvider = prefs[Keys.LLM_PROVIDER]?.let {
-                runCatching { LlmProvider.valueOf(it) }.getOrNull()
-            } ?: LlmProvider.DEMO,
-            llmApiKey = prefs[Keys.LLM_API_KEY] ?: "",
-            llmModel = prefs[Keys.LLM_MODEL] ?: "gemini-2.5-flash",
-            llmBaseUrl = prefs[Keys.LLM_BASE_URL] ?: "https://api.openai.com/v1"
+            executionMode = prefs[Keys.EXECUTION_MODE]?.let {
+                runCatching { ExecutionMode.valueOf(it) }.getOrNull()
+            } ?: ExecutionMode.DEMO,
+            proxyBaseUrl = prefs[Keys.PROXY_BASE_URL] ?: "",
+            geminiDevApiKey = prefs[Keys.GEMINI_DEV_KEY] ?: "",
+            openAiDevApiKey = prefs[Keys.OPENAI_DEV_KEY] ?: "",
+            groqDevApiKey = prefs[Keys.GROQ_DEV_KEY] ?: "",
+            primaryModelOverride = prefs[Keys.PRIMARY_MODEL_OVERRIDE]
+                ?: RoutingPolicyConfig.DEFAULT_PRIMARY_MODEL,
+            recoveryModelOverride = prefs[Keys.RECOVERY_MODEL_OVERRIDE]
+                ?: RoutingPolicyConfig.DEFAULT_RECOVERY_MODEL,
+            classifierModelOverride = prefs[Keys.CLASSIFIER_MODEL_OVERRIDE]
+                ?: RoutingPolicyConfig.DEFAULT_CLASSIFIER_MODEL,
+            maxObservationTokens = prefs[Keys.MAX_OBSERVATION_TOKENS]
+                ?: ScreenObservationNormalizer.DEFAULT_MAX_TOKEN_BUDGET
         )
     }
 
@@ -117,20 +134,40 @@ class OrbitPreferencesDataStore @Inject constructor(
         context.orbitDataStore.edit { it[Keys.SCREENSHOT_RETENTION] = enabled }
     }
 
-    suspend fun setLlmProvider(provider: LlmProvider) {
-        context.orbitDataStore.edit { it[Keys.LLM_PROVIDER] = provider.name }
+    suspend fun setExecutionMode(mode: ExecutionMode) {
+        context.orbitDataStore.edit { it[Keys.EXECUTION_MODE] = mode.name }
     }
 
-    suspend fun setLlmApiKey(apiKey: String) {
-        context.orbitDataStore.edit { it[Keys.LLM_API_KEY] = apiKey }
+    suspend fun setProxyBaseUrl(url: String) {
+        context.orbitDataStore.edit { it[Keys.PROXY_BASE_URL] = url }
     }
 
-    suspend fun setLlmModel(model: String) {
-        context.orbitDataStore.edit { it[Keys.LLM_MODEL] = model }
+    suspend fun setGeminiDevKey(key: String) {
+        context.orbitDataStore.edit { it[Keys.GEMINI_DEV_KEY] = key }
     }
 
-    suspend fun setLlmBaseUrl(baseUrl: String) {
-        context.orbitDataStore.edit { it[Keys.LLM_BASE_URL] = baseUrl }
+    suspend fun setOpenAiDevKey(key: String) {
+        context.orbitDataStore.edit { it[Keys.OPENAI_DEV_KEY] = key }
+    }
+
+    suspend fun setGroqDevKey(key: String) {
+        context.orbitDataStore.edit { it[Keys.GROQ_DEV_KEY] = key }
+    }
+
+    suspend fun setPrimaryModelOverride(model: String) {
+        context.orbitDataStore.edit { it[Keys.PRIMARY_MODEL_OVERRIDE] = model }
+    }
+
+    suspend fun setRecoveryModelOverride(model: String) {
+        context.orbitDataStore.edit { it[Keys.RECOVERY_MODEL_OVERRIDE] = model }
+    }
+
+    suspend fun setClassifierModelOverride(model: String) {
+        context.orbitDataStore.edit { it[Keys.CLASSIFIER_MODEL_OVERRIDE] = model }
+    }
+
+    suspend fun setMaxObservationTokens(tokens: Int) {
+        context.orbitDataStore.edit { it[Keys.MAX_OBSERVATION_TOKENS] = tokens }
     }
 
     suspend fun clearPersonalizationMemory() {

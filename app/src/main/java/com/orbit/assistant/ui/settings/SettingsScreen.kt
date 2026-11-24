@@ -19,18 +19,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Analytics
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Visibility
-import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -50,20 +48,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.orbit.assistant.BuildConfig
+import com.orbit.assistant.agent.llm.ProviderId
 import com.orbit.assistant.data.preferences.AutonomyLevel
 import com.orbit.assistant.data.preferences.ExecutionBehavior
-import com.orbit.assistant.data.preferences.LlmProvider
+import com.orbit.assistant.data.preferences.ExecutionMode
 import com.orbit.assistant.ui.components.OrbitCard
+import com.orbit.assistant.ui.components.OrbitSecondaryButton
 import com.orbit.assistant.ui.theme.OrbitTheme
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
+    onOpenUsage: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -72,22 +72,19 @@ fun SettingsScreen(
 
     var showLicensesDialog by remember { mutableStateOf(false) }
     var showAppsDialog by remember { mutableStateOf(false) }
-    var showApiKey by remember { mutableStateOf(false) }
-    var apiKeyDraft by remember(state.settings.llmApiKey) {
-        mutableStateOf(state.settings.llmApiKey)
-    }
-    var modelDraft by remember(state.settings.llmModel) {
-        mutableStateOf(state.settings.llmModel)
-    }
-    var baseUrlDraft by remember(state.settings.llmBaseUrl) {
-        mutableStateOf(state.settings.llmBaseUrl)
-    }
-    var brandsDraft by remember(state.settings.preferredBrands) {
-        mutableStateOf(state.settings.preferredBrands)
-    }
-    var categoriesDraft by remember(state.settings.preferredCategories) {
-        mutableStateOf(state.settings.preferredCategories)
-    }
+
+    var proxyDraft by remember(state.settings.proxyBaseUrl) { mutableStateOf(state.settings.proxyBaseUrl) }
+    var geminiKeyDraft by remember(state.settings.geminiDevApiKey) { mutableStateOf(state.settings.geminiDevApiKey) }
+    var openAiKeyDraft by remember(state.settings.openAiDevApiKey) { mutableStateOf(state.settings.openAiDevApiKey) }
+    var groqKeyDraft by remember(state.settings.groqDevApiKey) { mutableStateOf(state.settings.groqDevApiKey) }
+
+    var primaryModelDraft by remember(state.settings.primaryModelOverride) { mutableStateOf(state.settings.primaryModelOverride) }
+    var recoveryModelDraft by remember(state.settings.recoveryModelOverride) { mutableStateOf(state.settings.recoveryModelOverride) }
+    var classifierModelDraft by remember(state.settings.classifierModelOverride) { mutableStateOf(state.settings.classifierModelOverride) }
+    var tokenBudgetDraft by remember(state.settings.maxObservationTokens) { mutableStateOf(state.settings.maxObservationTokens.toString()) }
+
+    var brandsDraft by remember(state.settings.preferredBrands) { mutableStateOf(state.settings.preferredBrands) }
+    var categoriesDraft by remember(state.settings.preferredCategories) { mutableStateOf(state.settings.preferredCategories) }
 
     LaunchedEffect(Unit) {
         viewModel.refreshPermissions()
@@ -118,6 +115,39 @@ fun SettingsScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Token & Cost Monitoring
+            item {
+                SectionLabel("Monitoring")
+                OrbitCard(
+                    onClick = onOpenUsage,
+                    containerColor = colors.surface,
+                    borderColor = colors.borderSubtle
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(Icons.Rounded.Analytics, null, tint = colors.accentPrimary)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Token & Cost Usage",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = colors.textPrimary
+                            )
+                            Text(
+                                text = "View total tokens, estimated cost, per-task & provider breakdown",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary
+                            )
+                        }
+                        Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, tint = colors.textTertiary, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+
             // Appearance
             item {
                 SectionLabel("Appearance")
@@ -131,30 +161,25 @@ fun SettingsScreen(
                 }
             }
 
-            // LLM & Live Accessibility Execution
+            // Multi-LLM Routing & Security
             item {
-                SectionLabel("LLM & live execution")
+                SectionLabel("Model routing & security")
                 OrbitCard(containerColor = colors.surface, borderColor = colors.borderSubtle) {
                     Column(
                         modifier = Modifier.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            text = "Execution engine",
+                            text = "Execution mode",
                             style = MaterialTheme.typography.titleSmall,
                             color = colors.textPrimary
                         )
-                        Text(
-                            text = "Uses Android Accessibility UI trees (no vision required) when an API key is configured and Orbit Accessibility Service is enabled.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.textSecondary
-                        )
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            LlmProvider.entries.forEach { provider ->
+                            ExecutionMode.entries.forEach { mode ->
                                 FilterChip(
-                                    selected = state.settings.llmProvider == provider,
-                                    onClick = { viewModel.setLlmProvider(provider) },
-                                    label = { Text(provider.label) },
+                                    selected = state.settings.executionMode == mode,
+                                    onClick = { viewModel.setExecutionMode(mode) },
+                                    label = { Text(mode.label) },
                                     colors = FilterChipDefaults.filterChipColors(
                                         selectedContainerColor = colors.accentContainer,
                                         selectedLabelColor = colors.accentPrimary
@@ -163,56 +188,112 @@ fun SettingsScreen(
                             }
                         }
 
-                        if (state.settings.llmProvider != LlmProvider.DEMO) {
+                        if (state.settings.executionMode == ExecutionMode.LIVE) {
                             OutlinedTextField(
-                                value = apiKeyDraft,
+                                value = proxyDraft,
                                 onValueChange = {
-                                    apiKeyDraft = it
-                                    viewModel.setLlmApiKey(it)
+                                    proxyDraft = it
+                                    viewModel.setProxyBaseUrl(it)
                                 },
-                                label = { Text("API key (stored locally)") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
-                                trailingIcon = {
-                                    IconButton(onClick = { showApiKey = !showApiKey }) {
-                                        Icon(
-                                            imageVector = if (showApiKey) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                                            contentDescription = if (showApiKey) "Hide API key" else "Show API key"
-                                        )
-                                    }
-                                }
-                            )
-
-                            OutlinedTextField(
-                                value = modelDraft,
-                                onValueChange = {
-                                    modelDraft = it
-                                    viewModel.setLlmModel(it)
-                                },
-                                label = { Text("Model ID") },
-                                placeholder = {
-                                    Text(
-                                        if (state.settings.llmProvider == LlmProvider.GEMINI) "gemini-2.5-flash"
-                                        else "gpt-4o-mini"
-                                    )
-                                },
+                                label = { Text("Backend proxy URL (production)") },
+                                placeholder = { Text("https://api.yourdomain.com") },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true
                             )
 
-                            if (state.settings.llmProvider == LlmProvider.OPENAI_COMPATIBLE) {
+                            if (BuildConfig.DEBUG) {
+                                Text(
+                                    text = "Local debug keys (disabled in release builds; never committed to APK)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.textSecondary
+                                )
                                 OutlinedTextField(
-                                    value = baseUrlDraft,
+                                    value = geminiKeyDraft,
                                     onValueChange = {
-                                        baseUrlDraft = it
-                                        viewModel.setLlmBaseUrl(it)
+                                        geminiKeyDraft = it
+                                        viewModel.setGeminiDevKey(it)
                                     },
-                                    label = { Text("Base URL") },
-                                    placeholder = { Text("https://api.openai.com/v1") },
+                                    label = { Text("Gemini Dev Key") },
+                                    visualTransformation = PasswordVisualTransformation(),
                                     modifier = Modifier.fillMaxWidth(),
                                     singleLine = true
                                 )
+                                OutlinedTextField(
+                                    value = openAiKeyDraft,
+                                    onValueChange = {
+                                        openAiKeyDraft = it
+                                        viewModel.setOpenAiDevKey(it)
+                                    },
+                                    label = { Text("OpenAI Dev Key") },
+                                    visualTransformation = PasswordVisualTransformation(),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+                                OutlinedTextField(
+                                    value = groqKeyDraft,
+                                    onValueChange = {
+                                        groqKeyDraft = it
+                                        viewModel.setGroqDevKey(it)
+                                    },
+                                    label = { Text("Groq Dev Key") },
+                                    visualTransformation = PasswordVisualTransformation(),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+                            }
+
+                            Text(
+                                text = "Model routing overrides",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = colors.textPrimary
+                            )
+                            OutlinedTextField(
+                                value = primaryModelDraft,
+                                onValueChange = {
+                                    primaryModelDraft = it
+                                    viewModel.setPrimaryModelOverride(it)
+                                },
+                                label = { Text("Primary (Gemini)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = recoveryModelDraft,
+                                onValueChange = {
+                                    recoveryModelDraft = it
+                                    viewModel.setRecoveryModelOverride(it)
+                                },
+                                label = { Text("Complex recovery (OpenAI)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = classifierModelDraft,
+                                onValueChange = {
+                                    classifierModelDraft = it
+                                    viewModel.setClassifierModelOverride(it)
+                                },
+                                label = { Text("Lightweight classifier (Groq)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = tokenBudgetDraft,
+                                onValueChange = {
+                                    tokenBudgetDraft = it
+                                    it.toIntOrNull()?.let { parsed -> viewModel.setMaxObservationTokens(parsed) }
+                                },
+                                label = { Text("Max observation token budget") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                ProviderId.entries.forEach { pid ->
+                                    OrbitSecondaryButton(onClick = { viewModel.runProviderHealthCheck(pid) }) {
+                                        Text("Ping ${pid.name}")
+                                    }
+                                }
                             }
                         }
                     }
@@ -532,8 +613,8 @@ fun SettingsScreen(
                         ) {
                             Text("Agent runtime", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
                             Text(
-                                if (state.settings.llmProvider == LlmProvider.DEMO) "Demo Runtime"
-                                else "Live Accessibility (${state.settings.llmProvider.label})",
+                                if (state.settings.executionMode == ExecutionMode.DEMO) "Demo Runtime"
+                                else "Multi-LLM Accessibility Runtime",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = colors.textPrimary
                             )

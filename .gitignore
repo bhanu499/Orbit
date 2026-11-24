@@ -1,0 +1,13 @@
+# Gradle & Android Studio
+.gradle/
+build/
+*/build/
+.idea/
+*.iml
+
+# Secrets & local dev config (NEVER commit API keys)
+local.properties
+*.env
+*.jks
+*.keystore
+google-services.json

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.orbit.assistant.data.local.OrbitDatabase
 import com.orbit.assistant.data.local.TaskDao
+import com.orbit.assistant.data.local.TokenUsageDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -36,4 +37,7 @@ object DatabaseModule {
 
     @Provides
     fun provideTaskDao(database: OrbitDatabase): TaskDao = database.taskDao()
+
+    @Provides
+    fun provideTokenUsageDao(database: OrbitDatabase): TokenUsageDao = database.tokenUsageDao()
 }

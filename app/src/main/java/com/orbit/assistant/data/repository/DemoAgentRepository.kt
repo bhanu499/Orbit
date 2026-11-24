@@ -1,11 +1,12 @@
 package com.orbit.assistant.data.repository
 
+import com.orbit.assistant.BuildConfig
 import com.orbit.assistant.agent.events.DemoScenarios
 import com.orbit.assistant.agent.runtime.DemoAgentRuntime
 import com.orbit.assistant.agent.runtime.LiveAgentRuntime
 import com.orbit.assistant.data.local.TaskDao
 import com.orbit.assistant.data.local.TaskEntity
-import com.orbit.assistant.data.preferences.LlmProvider
+import com.orbit.assistant.data.preferences.ExecutionMode
 import com.orbit.assistant.domain.models.AgentEvent
 import com.orbit.assistant.domain.models.ApprovalDecision
 import com.orbit.assistant.domain.models.Task
@@ -46,7 +47,18 @@ class DemoAgentRepository @Inject constructor(
             taskDao.upsertTask(TaskEntity.fromDomain(updated, json))
         }
 
-        if (settings.llmProvider != LlmProvider.DEMO && settings.llmApiKey.isNotBlank()) {
+        val hasAnyProviderConfig = settings.proxyBaseUrl.isNotBlank() ||
+            BuildConfig.ORBIT_PROXY_BASE_URL.isNotBlank() ||
+            (BuildConfig.DEBUG && (
+                settings.geminiDevApiKey.isNotBlank() ||
+                    settings.openAiDevApiKey.isNotBlank() ||
+                    settings.groqDevApiKey.isNotBlank() ||
+                    BuildConfig.DEV_GEMINI_API_KEY.isNotBlank() ||
+                    BuildConfig.DEV_OPENAI_API_KEY.isNotBlank() ||
+                    BuildConfig.DEV_GROQ_API_KEY.isNotBlank()
+                ))
+
+        if (settings.executionMode == ExecutionMode.LIVE && hasAnyProviderConfig) {
             liveRuntime.startTask(initialTask, settings, persist)
         } else {
             demoRuntime.startTask(initialTask, persist)

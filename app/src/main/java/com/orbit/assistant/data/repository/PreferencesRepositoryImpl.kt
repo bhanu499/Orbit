@@ -2,7 +2,7 @@ package com.orbit.assistant.data.repository
 
 import com.orbit.assistant.data.preferences.AutonomyLevel
 import com.orbit.assistant.data.preferences.ExecutionBehavior
-import com.orbit.assistant.data.preferences.LlmProvider
+import com.orbit.assistant.data.preferences.ExecutionMode
 import com.orbit.assistant.data.preferences.OrbitPreferencesDataStore
 import com.orbit.assistant.data.preferences.OrbitSettings
 import com.orbit.assistant.domain.repository.PreferencesRepository
@@ -30,9 +30,14 @@ class PreferencesRepositoryImpl @Inject constructor(
     override suspend fun updateDefaultExecutionBehavior(behavior: ExecutionBehavior) =
         dataStore.setExecutionBehavior(behavior)
     override suspend fun updateScreenshotRetention(enabled: Boolean) = dataStore.setScreenshotRetention(enabled)
-    override suspend fun updateLlmProvider(provider: LlmProvider) = dataStore.setLlmProvider(provider)
-    override suspend fun updateLlmApiKey(apiKey: String) = dataStore.setLlmApiKey(apiKey)
-    override suspend fun updateLlmModel(model: String) = dataStore.setLlmModel(model)
-    override suspend fun updateLlmBaseUrl(baseUrl: String) = dataStore.setLlmBaseUrl(baseUrl)
+    override suspend fun updateExecutionMode(mode: ExecutionMode) = dataStore.setExecutionMode(mode)
+    override suspend fun updateProxyBaseUrl(url: String) = dataStore.setProxyBaseUrl(url)
+    override suspend fun updateGeminiDevKey(key: String) = dataStore.setGeminiDevKey(key)
+    override suspend fun updateOpenAiDevKey(key: String) = dataStore.setOpenAiDevKey(key)
+    override suspend fun updateGroqDevKey(key: String) = dataStore.setGroqDevKey(key)
+    override suspend fun updatePrimaryModelOverride(model: String) = dataStore.setPrimaryModelOverride(model)
+    override suspend fun updateRecoveryModelOverride(model: String) = dataStore.setRecoveryModelOverride(model)
+    override suspend fun updateClassifierModelOverride(model: String) = dataStore.setClassifierModelOverride(model)
+    override suspend fun updateMaxObservationTokens(tokens: Int) = dataStore.setMaxObservationTokens(tokens)
     override suspend fun clearAgentMemory() = dataStore.clearPersonalizationMemory()
 }

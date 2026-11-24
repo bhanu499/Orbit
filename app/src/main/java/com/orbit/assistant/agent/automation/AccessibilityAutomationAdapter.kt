@@ -2,6 +2,7 @@ package com.orbit.assistant.agent.automation
 
 import com.orbit.assistant.agent.appdiscovery.AppLaunchResult
 import com.orbit.assistant.agent.appdiscovery.AppLauncher
+import com.orbit.assistant.agent.observation.RawUiTree
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +33,12 @@ class AccessibilityAutomationAdapter @Inject constructor(
     override suspend fun disconnect() {
         _isConnected.value = false
         _isPaused.value = false
+    }
+
+    fun observeRawTree(): RawUiTree {
+        val service = OrbitAccessibilityService.instance.value
+            ?: return RawUiTree(packageName = "", activityName = "", nodes = emptyList())
+        return service.captureRawUiTree()
     }
 
     override suspend fun observeScreen(packageName: String, contextHint: String): ScreenObservation {

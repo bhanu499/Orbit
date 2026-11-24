@@ -1,5 +1,8 @@
 package com.orbit.assistant.data.preferences
 
+import com.orbit.assistant.agent.llm.RoutingPolicyConfig
+import com.orbit.assistant.agent.observation.ScreenObservationNormalizer
+
 enum class AutonomyLevel(val label: String, val description: String) {
     SUPERVISED("Supervised", "Ask before every major app action and purchase"),
     BALANCED("Balanced", "Execute routine navigation automatically; confirm sensitive steps"),
@@ -17,6 +20,11 @@ enum class LlmProvider(val label: String) {
     OPENAI_COMPATIBLE("OpenAI / Compatible")
 }
 
+enum class ExecutionMode(val label: String) {
+    DEMO("Demo Mode"),
+    LIVE("Live Multi-LLM")
+}
+
 data class OrbitSettings(
     val isDarkMode: Boolean = true,
     val autonomyLevel: AutonomyLevel = AutonomyLevel.BALANCED,
@@ -30,8 +38,13 @@ data class OrbitSettings(
     val preferredLanguage: String = "English",
     val defaultExecutionBehavior: ExecutionBehavior = ExecutionBehavior.STEP_BY_STEP,
     val retainScreenshotsLocally: Boolean = false,
-    val llmProvider: LlmProvider = LlmProvider.DEMO,
-    val llmApiKey: String = "",
-    val llmModel: String = "gemini-2.5-flash",
-    val llmBaseUrl: String = "https://api.openai.com/v1"
+    val executionMode: ExecutionMode = ExecutionMode.DEMO,
+    val proxyBaseUrl: String = "",
+    val geminiDevApiKey: String = "",
+    val openAiDevApiKey: String = "",
+    val groqDevApiKey: String = "",
+    val primaryModelOverride: String = RoutingPolicyConfig.DEFAULT_PRIMARY_MODEL,
+    val recoveryModelOverride: String = RoutingPolicyConfig.DEFAULT_RECOVERY_MODEL,
+    val classifierModelOverride: String = RoutingPolicyConfig.DEFAULT_CLASSIFIER_MODEL,
+    val maxObservationTokens: Int = ScreenObservationNormalizer.DEFAULT_MAX_TOKEN_BUDGET
 )

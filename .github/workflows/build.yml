@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    name: Build APK
+    name: Test & Build APK
     runs-on: ubuntu-latest
 
     steps:
@@ -24,6 +24,9 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
+      - name: Run Unit Tests & Evaluation Benchmarks
+        run: gradle testDebugUnitTest --no-daemon
 
       - name: Build Debug APK
         run: gradle assembleDebug --no-daemon

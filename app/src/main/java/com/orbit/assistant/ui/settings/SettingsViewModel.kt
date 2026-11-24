@@ -12,9 +12,12 @@ import androidx.lifecycle.viewModelScope
 import com.orbit.assistant.agent.appdiscovery.AppDescriptor
 import com.orbit.assistant.agent.appdiscovery.AppDiscoveryManager
 import com.orbit.assistant.agent.automation.OrbitAccessibilityService
+import com.orbit.assistant.agent.llm.ModelRouter
+import com.orbit.assistant.agent.llm.ProviderId
+import com.orbit.assistant.agent.runtime.LiveAgentRuntime
 import com.orbit.assistant.data.preferences.AutonomyLevel
 import com.orbit.assistant.data.preferences.ExecutionBehavior
-import com.orbit.assistant.data.preferences.LlmProvider
+import com.orbit.assistant.data.preferences.ExecutionMode
 import com.orbit.assistant.data.preferences.OrbitSettings
 import com.orbit.assistant.domain.repository.AgentRepository
 import com.orbit.assistant.domain.repository.PreferencesRepository
@@ -50,7 +53,9 @@ class SettingsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val preferencesRepository: PreferencesRepository,
     private val agentRepository: AgentRepository,
-    private val appDiscoveryManager: AppDiscoveryManager
+    private val appDiscoveryManager: AppDiscoveryManager,
+    private val modelRouter: ModelRouter,
+    private val liveAgentRuntime: LiveAgentRuntime
 ) : ViewModel() {
 
     private val _permissions = MutableStateFlow<List<PermissionStatusItem>>(emptyList())
@@ -141,6 +146,12 @@ class SettingsViewModel @Inject constructor(
             }
     }
 
+    fun runProviderHealthCheck(providerId: ProviderId) = viewModelScope.launch {
+        liveAgentRuntime.configureProviders(uiState.value.settings)
+        val status = modelRouter.providerFor(providerId).healthCheck()
+        _messages.tryEmit("${providerId.displayName}: ${status.message} (${status.latencyMs}ms)")
+    }
+
     fun setDarkMode(enabled: Boolean) = viewModelScope.launch {
         preferencesRepository.updateDarkMode(enabled)
     }
@@ -191,25 +202,40 @@ class SettingsViewModel @Inject constructor(
         preferencesRepository.updateScreenshotRetention(enabled)
     }
 
-    fun setLlmProvider(provider: LlmProvider) = viewModelScope.launch {
-        preferencesRepository.updateLlmProvider(provider)
-        if (provider == LlmProvider.GEMINI && uiState.value.settings.llmModel.startsWith("gpt-")) {
-            preferencesRepository.updateLlmModel("gemini-2.5-flash")
-        } else if (provider == LlmProvider.OPENAI_COMPATIBLE && uiState.value.settings.llmModel.startsWith("gemini-")) {
-            preferencesRepository.updateLlmModel("gpt-4o-mini")
-        }
+    fun setExecutionMode(mode: ExecutionMode) = viewModelScope.launch {
+        preferencesRepository.updateExecutionMode(mode)
     }
 
-    fun setLlmApiKey(apiKey: String) = viewModelScope.launch {
-        preferencesRepository.updateLlmApiKey(apiKey.trim())
+    fun setProxyBaseUrl(url: String) = viewModelScope.launch {
+        preferencesRepository.updateProxyBaseUrl(url.trim())
     }
 
-    fun setLlmModel(model: String) = viewModelScope.launch {
-        preferencesRepository.updateLlmModel(model.trim())
+    fun setGeminiDevKey(key: String) = viewModelScope.launch {
+        preferencesRepository.updateGeminiDevKey(key.trim())
     }
 
-    fun setLlmBaseUrl(baseUrl: String) = viewModelScope.launch {
-        preferencesRepository.updateLlmBaseUrl(baseUrl.trim())
+    fun setOpenAiDevKey(key: String) = viewModelScope.launch {
+        preferencesRepository.updateOpenAiDevKey(key.trim())
+    }
+
+    fun setGroqDevKey(key: String) = viewModelScope.launch {
+        preferencesRepository.updateGroqDevKey(key.trim())
+    }
+
+    fun setPrimaryModelOverride(model: String) = viewModelScope.launch {
+        preferencesRepository.updatePrimaryModelOverride(model.trim())
+    }
+
+    fun setRecoveryModelOverride(model: String) = viewModelScope.launch {
+        preferencesRepository.updateRecoveryModelOverride(model.trim())
+    }
+
+    fun setClassifierModelOverride(model: String) = viewModelScope.launch {
+        preferencesRepository.updateClassifierModelOverride(model.trim())
+    }
+
+    fun setMaxObservationTokens(tokens: Int) = viewModelScope.launch {
+        preferencesRepository.updateMaxObservationTokens(tokens.coerceIn(200, 4000))
     }
 
     fun clearTaskHistory() = viewModelScope.launch {

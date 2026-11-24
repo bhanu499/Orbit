@@ -8,6 +8,9 @@ import android.graphics.Rect
 import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.orbit.assistant.agent.observation.RawUiNode
+import com.orbit.assistant.agent.observation.RawUiTree
+import com.orbit.assistant.agent.observation.UiBounds
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,7 +39,8 @@ data class UiNodeSnapshot(
 
 class OrbitAccessibilityService : AccessibilityService() {
 
-    private var cachedNodes: List<AccessibilityNodeInfo> = emptyList()
+    private var cachedNodes: MutableMap<Int, AccessibilityNodeInfo> = mutableMapOf()
+    @Volatile private var lastActivityName: String = ""
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -45,7 +49,11 @@ class OrbitAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Events are pulled on demand during the Observe step of the agent loop.
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            event.className?.toString()?.takeIf { it.contains('.') }?.let {
+                lastActivityName = it.substringAfterLast('.')
+            }
+        }
     }
 
     override fun onInterrupt() {
@@ -70,57 +78,80 @@ class OrbitAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
-    fun captureUiTree(maxNodes: Int = 75): Pair<String, List<UiNodeSnapshot>> {
+    fun captureRawUiTree(maxNodes: Int = 140): RawUiTree {
         val root = rootInActiveWindow
             ?: windows?.firstOrNull { it.isActive }?.root
-            ?: return "" to emptyList()
+            ?: return RawUiTree(packageName = "", activityName = lastActivityName, nodes = emptyList())
+
         val pkg = root.packageName?.toString().orEmpty()
         clearCachedNodes()
+        val rawNodes = mutableListOf<RawUiNode>()
 
-        val nodeList = mutableListOf<AccessibilityNodeInfo>()
-        val snapshots = mutableListOf<UiNodeSnapshot>()
-
-        fun traverse(node: AccessibilityNodeInfo?, depth: Int) {
-            if (node == null || depth > 18 || snapshots.size >= maxNodes) return
+        fun traverse(node: AccessibilityNodeInfo?, depth: Int, parentLabel: String?) {
+            if (node == null || depth > 20 || rawNodes.size >= maxNodes) return
             val text = node.text?.toString()?.trim().orEmpty()
             val desc = node.contentDescription?.toString()?.trim().orEmpty()
             val viewId = node.viewIdResourceName.orEmpty()
-            val interesting = node.isClickable || node.isEditable || node.isScrollable ||
-                text.isNotBlank() || desc.isNotBlank()
+            val rect = Rect()
+            node.getBoundsInScreen(rect)
 
-            if (interesting && node.isVisibleToUser) {
-                val rect = Rect()
-                node.getBoundsInScreen(rect)
-                if (rect.width() > 0 && rect.height() > 0) {
-                    val idx = snapshots.size
-                    nodeList.add(node)
-                    snapshots.add(
-                        UiNodeSnapshot(
-                            index = idx,
-                            text = text.take(80),
-                            contentDescription = desc.take(80),
-                            viewId = viewId,
-                            className = node.className?.toString()?.substringAfterLast('.').orEmpty(),
-                            bounds = rect,
-                            isClickable = node.isClickable,
-                            isEditable = node.isEditable,
-                            isScrollable = node.isScrollable
-                        )
-                    )
-                }
-            }
+            val id = rawNodes.size
+            cachedNodes[id] = node
+            rawNodes.add(
+                RawUiNode(
+                    nodeId = id,
+                    text = text,
+                    contentDescription = desc,
+                    viewId = viewId,
+                    className = node.className?.toString().orEmpty(),
+                    bounds = UiBounds(rect.left, rect.top, rect.right, rect.bottom),
+                    isVisibleToUser = node.isVisibleToUser,
+                    isClickable = node.isClickable,
+                    isEditable = node.isEditable,
+                    isScrollable = node.isScrollable,
+                    isSelected = node.isSelected,
+                    isEnabled = node.isEnabled,
+                    isFocused = node.isFocused,
+                    parentContext = parentLabel
+                )
+            )
+
+            val nextParentLabel = text.ifBlank { desc }.take(28).ifBlank { parentLabel }
             for (i in 0 until node.childCount) {
-                traverse(node.getChild(i), depth + 1)
+                traverse(node.getChild(i), depth + 1, nextParentLabel)
             }
         }
 
-        traverse(root, 0)
-        cachedNodes = nodeList
-        return pkg to snapshots
+        traverse(root, 0, null)
+        return RawUiTree(
+            packageName = pkg,
+            activityName = lastActivityName,
+            nodes = rawNodes
+        )
     }
 
-    fun clickNode(index: Int): Boolean {
-        val node = cachedNodes.getOrNull(index) ?: return false
+    fun captureUiTree(maxNodes: Int = 75): Pair<String, List<UiNodeSnapshot>> {
+        val raw = captureRawUiTree(maxNodes)
+        val snapshots = raw.nodes
+            .filter { it.isVisibleToUser && it.bounds.width > 0 && it.bounds.height > 0 }
+            .map {
+                UiNodeSnapshot(
+                    index = it.nodeId,
+                    text = it.text.take(80),
+                    contentDescription = it.contentDescription.take(80),
+                    viewId = it.viewId,
+                    className = it.className.substringAfterLast('.'),
+                    bounds = Rect(it.bounds.left, it.bounds.top, it.bounds.right, it.bounds.bottom),
+                    isClickable = it.isClickable,
+                    isEditable = it.isEditable,
+                    isScrollable = it.isScrollable
+                )
+            }
+        return raw.packageName to snapshots
+    }
+
+    fun clickNode(nodeId: Int): Boolean {
+        val node = cachedNodes[nodeId] ?: return false
         var current: AccessibilityNodeInfo? = node
         while (current != null) {
             if (current.isClickable && current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
@@ -140,11 +171,11 @@ class OrbitAccessibilityService : AccessibilityService() {
         return dispatchGesture(gesture, null, null)
     }
 
-    fun typeIntoNode(index: Int?, text: String): Boolean {
-        val target = if (index != null) {
-            cachedNodes.getOrNull(index)
+    fun typeIntoNode(nodeId: Int?, text: String): Boolean {
+        val target = if (nodeId != null) {
+            cachedNodes[nodeId]
         } else {
-            cachedNodes.firstOrNull { it.isEditable }
+            cachedNodes.values.firstOrNull { it.isEditable }
         } ?: return false
 
         target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
@@ -156,7 +187,7 @@ class OrbitAccessibilityService : AccessibilityService() {
     }
 
     fun scroll(direction: ScrollDirection): Boolean {
-        val scrollable = cachedNodes.firstOrNull { it.isScrollable }
+        val scrollable = cachedNodes.values.firstOrNull { it.isScrollable }
         if (scrollable != null) {
             val action = when (direction) {
                 ScrollDirection.DOWN, ScrollDirection.RIGHT -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
@@ -179,7 +210,7 @@ class OrbitAccessibilityService : AccessibilityService() {
     fun pressBack(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
 
     private fun clearCachedNodes() {
-        cachedNodes = emptyList()
+        cachedNodes.clear()
     }
 
     companion object {
