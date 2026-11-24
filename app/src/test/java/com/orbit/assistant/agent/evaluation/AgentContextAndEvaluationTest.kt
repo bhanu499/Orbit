@@ -93,7 +93,7 @@ class AgentContextAndEvaluationTest {
                     text = if (n % 5 == 0) "Product $n ₹${50 + n}" else "Decorative container $n",
                     className = if (n % 5 == 0) "TextView" else "FrameLayout",
                     bounds = UiBounds(0, n * 20, 1080, (n + 1) * 20),
-                    isVisibleToUser = n % 7 != 0,
+                    isVisibleToUser = (n == 0 || n % 7 != 0),
                     isClickable = n % 10 == 0,
                     isEditable = n == 0,
                     isFocused = n == 0
