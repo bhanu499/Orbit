@@ -436,7 +436,7 @@ class LiveAgentRuntime @Inject constructor(
             You are Orbit, an Android AI agent. Return ONLY valid JSON matching:
             "action" MUST be exactly ONE of: TAP, TYPE_TEXT, SCROLL, BACK, LAUNCH_APP, WAIT, ASK_USER, COMPLETE.
             Example: {"thought":"Open Blinkit","confidence":0.9,"action":"LAUNCH_APP","nodeId":null,"text":null,"direction":null,"packageName":"com.grofers.customerapp","summary":null}
-            Rules: Never complete payment. Use ASK_USER before checkout/login/OTP. Use nodeId from SCREEN.
+            Rules: If APP is com.orbit.assistant, you MUST call LAUNCH_APP first with a packageName from APPS—NEVER TAP or TYPE_TEXT inside com.orbit.assistant. Never complete payment. Use ASK_USER before checkout/login/OTP.
         """.trimIndent()
 
         var userPrompt = "$contextPrompt\n\nSCREEN:\n$screenPrompt"
@@ -473,6 +473,15 @@ class LiveAgentRuntime @Inject constructor(
                 reason = if (attempt == 0) reason else "validation_repair_$attempt"
             )
 
+            val selfUiBlocked = observation.packageName == "com.orbit.assistant" &&
+                (structured.data.action == AgentActionType.TAP || structured.data.action == AgentActionType.TYPE_TEXT)
+            if (selfUiBlocked) {
+                if (attempt == maxValidationAttempts) {
+                    return Result.failure(IllegalArgumentException("Agent attempted to interact with Orbit UI instead of launching target app"))
+                }
+                userPrompt = "$contextPrompt\n\nSCREEN:\n$screenPrompt\n\nVALIDATION_ERROR: Current screen is com.orbit.assistant (Orbit itself). Call LAUNCH_APP with a packageName from APPS first."
+                continue
+            }
             when (val validation = AgentActionValidator.validate(structured.data, observation)) {
                 is ActionValidationResult.Valid -> return Result.success(validation.plan)
                 is ActionValidationResult.Invalid -> {
