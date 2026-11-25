@@ -26,10 +26,12 @@ jobs:
           gradle-version: '8.9'
 
       - name: Restore Persistent Debug Keystore
-        if: ${{ secrets.ORBIT_DEBUG_KEYSTORE_B64 != '' }}
+        env:
+          KEYSTORE_B64: ${{ secrets.ORBIT_DEBUG_KEYSTORE_B64 }}
+        if: ${{ env.KEYSTORE_B64 != '' }}
         run: |
           mkdir -p ~/.android
-          echo "${{ secrets.ORBIT_DEBUG_KEYSTORE_B64 }}" | base64 -d > ~/.android/debug.keystore
+          echo "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
 
       - name: Run Unit Tests & Evaluation Benchmarks
         run: gradle testDebugUnitTest --no-daemon
