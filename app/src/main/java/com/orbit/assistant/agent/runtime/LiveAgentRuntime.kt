@@ -75,7 +75,8 @@ class LiveAgentRuntime @Inject constructor(
         )
         openAIProvider.config = LLMProviderConfig(
             apiKey = if (BuildConfig.DEBUG) settings.openAiDevApiKey.ifBlank { BuildConfig.DEV_OPENAI_API_KEY } else "",
-            proxyBaseUrl = proxy
+            proxyBaseUrl = if (settings.useLocalLlm) "" else proxy,
+            baseUrlOverride = if (settings.useLocalLlm) settings.localLlmBaseUrl else ""
         )
         groqProvider.config = LLMProviderConfig(
             apiKey = if (BuildConfig.DEBUG) settings.groqDevApiKey.ifBlank { BuildConfig.DEV_GROQ_API_KEY } else "",
@@ -146,11 +147,23 @@ class LiveAgentRuntime @Inject constructor(
                 "${it.appName}=${it.packageName}"
             }
 
-            val routingPolicy = RoutingPolicyConfig(
-                primaryModel = settings.primaryModelOverride.ifBlank { RoutingPolicyConfig.DEFAULT_PRIMARY_MODEL },
-                recoveryModel = settings.recoveryModelOverride.ifBlank { RoutingPolicyConfig.DEFAULT_RECOVERY_MODEL },
-                classifierModel = settings.classifierModelOverride.ifBlank { RoutingPolicyConfig.DEFAULT_CLASSIFIER_MODEL }
-            )
+            val routingPolicy = if (settings.useLocalLlm) {
+                val localModel = settings.localLlmModel.ifBlank { "qwen2.5:3b" }
+                RoutingPolicyConfig(
+                    primaryProvider = ProviderId.OPENAI,
+                    primaryModel = localModel,
+                    recoveryProvider = ProviderId.OPENAI,
+                    recoveryModel = localModel,
+                    classifierProvider = ProviderId.OPENAI,
+                    classifierModel = localModel
+                )
+            } else {
+                RoutingPolicyConfig(
+                    primaryModel = settings.primaryModelOverride.ifBlank { RoutingPolicyConfig.DEFAULT_PRIMARY_MODEL },
+                    recoveryModel = settings.recoveryModelOverride.ifBlank { RoutingPolicyConfig.DEFAULT_RECOVERY_MODEL },
+                    classifierModel = settings.classifierModelOverride.ifBlank { RoutingPolicyConfig.DEFAULT_CLASSIFIER_MODEL }
+                )
+            }
 
             var lastConfidence = 1.0f
             var lastErrorTransient = false

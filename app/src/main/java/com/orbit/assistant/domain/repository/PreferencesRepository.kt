@@ -29,5 +29,8 @@ interface PreferencesRepository {
     suspend fun updateRecoveryModelOverride(model: String)
     suspend fun updateClassifierModelOverride(model: String)
     suspend fun updateMaxObservationTokens(tokens: Int)
+    suspend fun updateUseLocalLlm(enabled: Boolean)
+    suspend fun updateLocalLlmBaseUrl(url: String)
+    suspend fun updateLocalLlmModel(model: String)
     suspend fun clearAgentMemory()
 }

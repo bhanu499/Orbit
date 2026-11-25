@@ -46,5 +46,8 @@ data class OrbitSettings(
     val primaryModelOverride: String = RoutingPolicyConfig.DEFAULT_PRIMARY_MODEL,
     val recoveryModelOverride: String = RoutingPolicyConfig.DEFAULT_RECOVERY_MODEL,
     val classifierModelOverride: String = RoutingPolicyConfig.DEFAULT_CLASSIFIER_MODEL,
-    val maxObservationTokens: Int = ScreenObservationNormalizer.DEFAULT_MAX_TOKEN_BUDGET
+    val maxObservationTokens: Int = ScreenObservationNormalizer.DEFAULT_MAX_TOKEN_BUDGET,
+    val useLocalLlm: Boolean = false,
+    val localLlmBaseUrl: String = "http://127.0.0.1:11434/v1",
+    val localLlmModel: String = "qwen2.5:3b"
 )

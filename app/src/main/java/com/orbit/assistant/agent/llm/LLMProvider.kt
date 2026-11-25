@@ -20,7 +20,7 @@ data class LLMProviderConfig(
         get() = proxyBaseUrl.isNotBlank()
 
     val isConfigured: Boolean
-        get() = usesProxy || apiKey.isNotBlank()
+        get() = usesProxy || apiKey.isNotBlank() || baseUrlOverride.isNotBlank()
 }
 
 data class LLMRequest(

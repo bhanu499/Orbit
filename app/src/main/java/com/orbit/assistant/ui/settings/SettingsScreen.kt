@@ -82,6 +82,8 @@ fun SettingsScreen(
     var recoveryModelDraft by remember(state.settings.recoveryModelOverride) { mutableStateOf(state.settings.recoveryModelOverride) }
     var classifierModelDraft by remember(state.settings.classifierModelOverride) { mutableStateOf(state.settings.classifierModelOverride) }
     var tokenBudgetDraft by remember(state.settings.maxObservationTokens) { mutableStateOf(state.settings.maxObservationTokens.toString()) }
+    var localUrlDraft by remember(state.settings.localLlmBaseUrl) { mutableStateOf(state.settings.localLlmBaseUrl) }
+    var localModelDraft by remember(state.settings.localLlmModel) { mutableStateOf(state.settings.localLlmModel) }
 
     var brandsDraft by remember(state.settings.preferredBrands) { mutableStateOf(state.settings.preferredBrands) }
     var categoriesDraft by remember(state.settings.preferredCategories) { mutableStateOf(state.settings.preferredCategories) }
@@ -189,6 +191,52 @@ fun SettingsScreen(
                         }
 
                         if (state.settings.executionMode == ExecutionMode.LIVE) {
+                            SettingsSwitchRow(
+                                title = "Use local LLM (Termux)",
+                                subtitle = "Route to Ollama or llama.cpp running on 127.0.0.1",
+                                checked = state.settings.useLocalLlm,
+                                onCheckedChange = viewModel::setUseLocalLlm
+                            )
+                            if (state.settings.useLocalLlm) {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(
+                                        selected = localUrlDraft.contains("11434"),
+                                        onClick = {
+                                            localUrlDraft = "http://127.0.0.1:11434/v1"
+                                            viewModel.setLocalLlmBaseUrl(localUrlDraft)
+                                        },
+                                        label = { Text("Ollama (:11434)") }
+                                    )
+                                    FilterChip(
+                                        selected = localUrlDraft.contains("8080"),
+                                        onClick = {
+                                            localUrlDraft = "http://127.0.0.1:8080/v1"
+                                            viewModel.setLocalLlmBaseUrl(localUrlDraft)
+                                        },
+                                        label = { Text("llama.cpp (:8080)") }
+                                    )
+                                }
+                                OutlinedTextField(
+                                    value = localUrlDraft,
+                                    onValueChange = {
+                                        localUrlDraft = it
+                                        viewModel.setLocalLlmBaseUrl(it)
+                                    },
+                                    label = { Text("Local OpenAI-compatible URL") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+                                OutlinedTextField(
+                                    value = localModelDraft,
+                                    onValueChange = {
+                                        localModelDraft = it
+                                        viewModel.setLocalLlmModel(it)
+                                    },
+                                    label = { Text("Local model name (e.g. qwen2.5:3b)") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+                            }
                             OutlinedTextField(
                                 value = proxyDraft,
                                 onValueChange = {

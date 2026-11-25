@@ -45,6 +45,9 @@ class OrbitPreferencesDataStore @Inject constructor(
         val RECOVERY_MODEL_OVERRIDE = stringPreferencesKey("recovery_model_override")
         val CLASSIFIER_MODEL_OVERRIDE = stringPreferencesKey("classifier_model_override")
         val MAX_OBSERVATION_TOKENS = intPreferencesKey("max_observation_tokens")
+        val USE_LOCAL_LLM = booleanPreferencesKey("use_local_llm")
+        val LOCAL_LLM_BASE_URL = stringPreferencesKey("local_llm_base_url")
+        val LOCAL_LLM_MODEL = stringPreferencesKey("local_llm_model")
     }
 
     val settingsFlow: Flow<OrbitSettings> = context.orbitDataStore.data.map { prefs ->
@@ -82,7 +85,10 @@ class OrbitPreferencesDataStore @Inject constructor(
             classifierModelOverride = prefs[Keys.CLASSIFIER_MODEL_OVERRIDE]
                 ?: RoutingPolicyConfig.DEFAULT_CLASSIFIER_MODEL,
             maxObservationTokens = prefs[Keys.MAX_OBSERVATION_TOKENS]
-                ?: ScreenObservationNormalizer.DEFAULT_MAX_TOKEN_BUDGET
+                ?: ScreenObservationNormalizer.DEFAULT_MAX_TOKEN_BUDGET,
+            useLocalLlm = prefs[Keys.USE_LOCAL_LLM] ?: false,
+            localLlmBaseUrl = prefs[Keys.LOCAL_LLM_BASE_URL] ?: "http://127.0.0.1:11434/v1",
+            localLlmModel = prefs[Keys.LOCAL_LLM_MODEL] ?: "qwen2.5:3b"
         )
     }
 
@@ -168,6 +174,18 @@ class OrbitPreferencesDataStore @Inject constructor(
 
     suspend fun setMaxObservationTokens(tokens: Int) {
         context.orbitDataStore.edit { it[Keys.MAX_OBSERVATION_TOKENS] = tokens }
+    }
+
+    suspend fun setUseLocalLlm(enabled: Boolean) {
+        context.orbitDataStore.edit { it[Keys.USE_LOCAL_LLM] = enabled }
+    }
+
+    suspend fun setLocalLlmBaseUrl(url: String) {
+        context.orbitDataStore.edit { it[Keys.LOCAL_LLM_BASE_URL] = url }
+    }
+
+    suspend fun setLocalLlmModel(model: String) {
+        context.orbitDataStore.edit { it[Keys.LOCAL_LLM_MODEL] = model }
     }
 
     suspend fun clearPersonalizationMemory() {

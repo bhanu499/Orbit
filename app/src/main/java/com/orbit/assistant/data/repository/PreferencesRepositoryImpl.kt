@@ -39,5 +39,8 @@ class PreferencesRepositoryImpl @Inject constructor(
     override suspend fun updateRecoveryModelOverride(model: String) = dataStore.setRecoveryModelOverride(model)
     override suspend fun updateClassifierModelOverride(model: String) = dataStore.setClassifierModelOverride(model)
     override suspend fun updateMaxObservationTokens(tokens: Int) = dataStore.setMaxObservationTokens(tokens)
+    override suspend fun updateUseLocalLlm(enabled: Boolean) = dataStore.setUseLocalLlm(enabled)
+    override suspend fun updateLocalLlmBaseUrl(url: String) = dataStore.setLocalLlmBaseUrl(url)
+    override suspend fun updateLocalLlmModel(model: String) = dataStore.setLocalLlmModel(model)
     override suspend fun clearAgentMemory() = dataStore.clearPersonalizationMemory()
 }

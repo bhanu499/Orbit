@@ -238,6 +238,18 @@ class SettingsViewModel @Inject constructor(
         preferencesRepository.updateMaxObservationTokens(tokens.coerceIn(200, 4000))
     }
 
+    fun setUseLocalLlm(enabled: Boolean) = viewModelScope.launch {
+        preferencesRepository.updateUseLocalLlm(enabled)
+    }
+
+    fun setLocalLlmBaseUrl(url: String) = viewModelScope.launch {
+        preferencesRepository.updateLocalLlmBaseUrl(url.trim())
+    }
+
+    fun setLocalLlmModel(model: String) = viewModelScope.launch {
+        preferencesRepository.updateLocalLlmModel(model.trim())
+    }
+
     fun clearTaskHistory() = viewModelScope.launch {
         agentRepository.clearTaskHistory()
         _messages.tryEmit("Task history cleared.")

@@ -47,7 +47,8 @@ class DemoAgentRepository @Inject constructor(
             taskDao.upsertTask(TaskEntity.fromDomain(updated, json))
         }
 
-        val hasAnyProviderConfig = settings.proxyBaseUrl.isNotBlank() ||
+        val hasAnyProviderConfig = (settings.useLocalLlm && settings.localLlmBaseUrl.isNotBlank()) ||
+            settings.proxyBaseUrl.isNotBlank() ||
             BuildConfig.ORBIT_PROXY_BASE_URL.isNotBlank() ||
             (BuildConfig.DEBUG && (
                 settings.geminiDevApiKey.isNotBlank() ||
