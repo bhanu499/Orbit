@@ -143,7 +143,8 @@ class LiveAgentRuntime @Inject constructor(
             )
 
             val installedApps = appDiscoveryManager.discoverLaunchableApps()
-            val appsCompact = installedApps.take(25).joinToString(", ") {
+            val priorityApps = installedApps.filter { it.isSupported }.ifEmpty { installedApps }
+            val appsCompact = priorityApps.take(8).joinToString(", ") {
                 "${it.appName}=${it.packageName}"
             }
 
@@ -433,8 +434,9 @@ class LiveAgentRuntime @Inject constructor(
         val provider = modelRouter.providerFor(providerId)
         val systemPrompt = """
             You are Orbit, an Android AI agent. Return ONLY valid JSON matching:
-            {"thought":"...","confidence":0.0-1.0,"action":"TAP|TYPE_TEXT|SCROLL|BACK|LAUNCH_APP|WAIT|ASK_USER|COMPLETE","nodeId":int|null,"text":string|null,"direction":"up|down|left|right"|null,"packageName":string|null,"summary":string|null}
-            Rules: Never complete payment. Use ASK_USER before checkout/purchase/login/OTP. Use nodeId from UI elements.
+            "action" MUST be exactly ONE of: TAP, TYPE_TEXT, SCROLL, BACK, LAUNCH_APP, WAIT, ASK_USER, COMPLETE.
+            Example: {"thought":"Open Blinkit","confidence":0.9,"action":"LAUNCH_APP","nodeId":null,"text":null,"direction":null,"packageName":"com.grofers.customerapp","summary":null}
+            Rules: Never complete payment. Use ASK_USER before checkout/login/OTP. Use nodeId from SCREEN.
         """.trimIndent()
 
         var userPrompt = "$contextPrompt\n\nSCREEN:\n$screenPrompt"
