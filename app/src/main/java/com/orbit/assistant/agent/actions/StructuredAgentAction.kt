@@ -17,7 +17,7 @@ enum class AgentActionType {
 
 @Serializable
 data class AgentActionPlan(
-    val thought: String,
+    val thought: String = "",
     val confidence: Float = 0.8f,
     val action: AgentActionType,
     val nodeId: Int? = null,
