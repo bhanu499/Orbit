@@ -178,7 +178,11 @@ class LiveAgentRuntime @Inject constructor(
                 val normalized = normalizer.normalize(rawTree, settings.maxObservationTokens)
                 val diff = normalizer.compare(prevObs, normalized)
                 val ctx = contextManager.updateObservation(normalized, diff)
-                val screenPrompt = normalizer.toCompactPrompt(normalized, diff)
+                val screenPrompt = if (normalized.packageName == "com.orbit.assistant") {
+                    "APP=com.orbit.assistant (Orbit UI — call LAUNCH_APP with a packageName from APPS)"
+                } else {
+                    normalizer.toCompactPrompt(normalized, diff)
+                }
 
                 val route = modelRouter.selectRoute(
                     signals = RoutingSignals(
@@ -436,7 +440,7 @@ class LiveAgentRuntime @Inject constructor(
             You are Orbit, an Android AI agent. Return ONLY valid JSON matching:
             "action" MUST be exactly ONE of: TAP, TYPE_TEXT, SCROLL, BACK, LAUNCH_APP, WAIT, ASK_USER, COMPLETE.
             Example: {"thought":"Open Blinkit","confidence":0.9,"action":"LAUNCH_APP","nodeId":null,"text":null,"direction":null,"packageName":"com.grofers.customerapp","summary":null}
-            Rules: If APP is com.orbit.assistant, you MUST call LAUNCH_APP first with a packageName from APPS—NEVER TAP or TYPE_TEXT inside com.orbit.assistant. Never complete payment. Use ASK_USER before checkout/login/OTP.
+            Rules: If APP is com.orbit.assistant, you MUST call LAUNCH_APP first with a packageName from APPS—NEVER TAP or TYPE_TEXT inside com.orbit.assistant. Never complete payment. Use ASK_USER before checkout/login/OTP. /no_think
         """.trimIndent()
 
         var userPrompt = "$contextPrompt\n\nSCREEN:\n$screenPrompt"

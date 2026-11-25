@@ -223,6 +223,7 @@ class GeminiProvider @Inject constructor(
 }
 
 internal fun stripCodeFences(raw: String): String = raw
+    .replace(Regex("<think>[\\s\\S]*?</think>"), "")
     .trim()
     .removePrefix("```json")
     .removePrefix("```")
