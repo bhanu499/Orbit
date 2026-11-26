@@ -440,7 +440,7 @@ class LiveAgentRuntime @Inject constructor(
             You are Orbit, an Android AI agent. Return ONLY valid JSON matching:
             "action" MUST be exactly ONE of: TAP, TYPE_TEXT, SCROLL, BACK, LAUNCH_APP, WAIT, ASK_USER, COMPLETE.
             Example: {"thought":"Open Blinkit","confidence":0.9,"action":"LAUNCH_APP","nodeId":null,"text":null,"direction":null,"packageName":"com.grofers.customerapp","summary":null}
-            Rules: If APP is com.orbit.assistant, you MUST call LAUNCH_APP first with a packageName from APPS—NEVER TAP or TYPE_TEXT inside com.orbit.assistant. Never complete payment. Use ASK_USER before checkout/login/OTP. /no_think
+            Rules: If APP is com.orbit.assistant, you MUST call LAUNCH_APP first with a packageName from APPS—NEVER TAP or TYPE_TEXT inside com.orbit.assistant. If a search bar is not marked (edit), TAP it first before using TYPE_TEXT. Never complete payment. Use ASK_USER before checkout/login/OTP. /no_think
         """.trimIndent()
 
         var userPrompt = "$contextPrompt\n\nSCREEN:\n$screenPrompt"

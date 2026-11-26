@@ -177,27 +177,33 @@ open class OpenAICompatibleProvider(
     }
 
     private suspend fun executeWithTransientRetry(url: String, bodyJson: String): String {
-        val delays = listOf(800L, 1600L)
+        val defaultDelays = listOf(1500L, 4000L, 8000L)
         var lastError: Exception? = null
-        for (attempt in 0..delays.size) {
+        for (attempt in 0..defaultDelays.size) {
             val builder = Request.Builder()
                 .url(url)
                 .post(bodyJson.toRequestBody("application/json".toMediaType()))
             if (!config.usesProxy && config.apiKey.isNotBlank()) {
                 builder.addHeader("Authorization", "Bearer ${config.apiKey}")
             }
+            var waitOverrideMs: Long? = null
             try {
                 okHttpClient.newCall(builder.build()).execute().use { resp ->
                     val raw = resp.body?.string().orEmpty()
                     if (resp.isSuccessful) return raw
-                    if (resp.code == 429 || resp.code == 503) {
+                    if (resp.code == 429 || resp.code == 500 || resp.code == 502 || resp.code == 503) {
+                        val retrySec = Regex("try again in ([0-9.]+)s", RegexOption.IGNORE_CASE)
+                            .find(raw)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
+                        if (retrySec != null) {
+                            waitOverrideMs = ((retrySec * 1000).toLong() + 500L).coerceIn(1000L, 15000L)
+                        }
                         throw TransientProviderException(resp.code, "${id.displayName} HTTP ${resp.code}: ${raw.take(240)}")
                     }
                     error("${id.displayName} API error ${resp.code}: ${raw.take(240)}")
                 }
             } catch (e: TransientProviderException) {
                 lastError = e
-                if (attempt < delays.size) delay(delays[attempt])
+                if (attempt < defaultDelays.size) delay(waitOverrideMs ?: defaultDelays[attempt])
             }
         }
         throw lastError ?: IllegalStateException("${id.displayName} request failed")
